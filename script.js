@@ -1,3 +1,18 @@
+// Firebase configuration using CDN scripts
+const firebaseConfig = {
+    apiKey: "AIzaSyA5KVNtwdH0vjTyHwpHVPqf5tNOVUeOxbA",
+    authDomain: "biblereadingapp-a3c7a.firebaseapp.com",
+    databaseURL: "https://biblereadingapp-a3c7a-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "biblereadingapp-a3c7a",
+    storageBucket: "biblereadingapp-a3c7a.firebasestorage.app",
+    messagingSenderId: "368092993348",
+    appId: "1:368092993348:web:478a0cb7825979fa68e911"
+};
+
+// Initialize Firebase
+const app = firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+
 // Initialize collapsible sections
 const collapsibles = document.querySelectorAll(".collapsible");
 collapsibles.forEach(button => {
@@ -16,14 +31,13 @@ collapsibles.forEach(button => {
 fetch("schedule.json")
     .then(response => response.json())
     .then(schedule => {
-        populateTables(schedule);
-        loadProgressLocal(schedule);
+        populateFirebaseTable(schedule); // Populate table with schedule data
+        loadProgressFirebase(schedule); // Load saved progress
     })
     .catch(error => console.error("Error loading schedule:", error));
 
-// Populate Tables with Schedule
-function populateTables(schedule) {
-    const localTableBody = document.getElementById("localTable").querySelector("tbody");
+// Populate Firebase Table
+function populateFirebaseTable(schedule) {
     const firebaseTableBody = document.getElementById("firebaseTable").querySelector("tbody");
 
     schedule.forEach((item, index) => {
@@ -35,46 +49,15 @@ function populateTables(schedule) {
                 <td class="chapters hidden">${item.numChapters}</td>
                 <td class="verses hidden">${item.verses}</td>
                 <td class="icon-column">
-                    <input type="checkbox" id="localCheck${index}" onclick="saveProgressLocal(${index})">
-                </td>
-            </tr>
-        `;
-        localTableBody.innerHTML += row;
-
-        const firebaseRow = `
-            <tr>
-                <td>${item.date}</td>
-                <td>${item.day}</td>
-                <td>${item.chapters}</td>
-                <td class="chapters hidden">${item.numChapters}</td>
-                <td class="verses hidden">${item.verses}</td>
-                <td class="icon-column">
                     <input type="checkbox" id="firebaseCheck${index}" onclick="saveProgressFirebase(${index})">
                 </td>
             </tr>
         `;
-        firebaseTableBody.innerHTML += firebaseRow;
+        firebaseTableBody.innerHTML += row;
     });
 }
 
-// Save Progress to Local Storage
-function saveProgressLocal(index) {
-    const checkbox = document.getElementById(`localCheck${index}`);
-    localStorage.setItem(`localProgress${index}`, checkbox.checked);
-}
-
-// Load Progress from Local Storage
-function loadProgressLocal(schedule) {
-    schedule.forEach((_, index) => {
-        const checkbox = document.getElementById(`localCheck${index}`);
-        const savedProgress = localStorage.getItem(`localProgress${index}`);
-        if (savedProgress === "true") {
-            checkbox.checked = true;
-        }
-    });
-}
-
-// Firebase Save/Load Logic (optional)
+// Save Progress to Firebase
 function saveProgressFirebase(index) {
     const checkbox = document.getElementById(`firebaseCheck${index}`);
     const isChecked = checkbox.checked;
@@ -82,6 +65,7 @@ function saveProgressFirebase(index) {
     progressRef.set(isChecked);
 }
 
+// Load Progress from Firebase
 function loadProgressFirebase(schedule) {
     const progressRef = firebase.database().ref('progress');
     progressRef.once('value', snapshot => {
@@ -93,5 +77,13 @@ function loadProgressFirebase(schedule) {
                 if (checkbox) checkbox.checked = progress[key];
             });
         }
+    });
+}
+
+// Toggle visibility of columns
+function toggleColumn(section, columnClass) {
+    const elements = document.querySelectorAll(`#${section}Table .${columnClass}`);
+    elements.forEach(element => {
+        element.classList.toggle('hidden');
     });
 }
