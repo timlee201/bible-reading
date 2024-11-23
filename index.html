@@ -6,34 +6,9 @@
     <title>New Testament Reading Schedule</title>
     <!-- Link to external CSS -->
     <link rel="stylesheet" href="styles.css">
-    <link rel="icon" href="favicon.png" type="image/png">
 </head>
 <body>
     <h1>New Testament Reading Schedule</h1>
-
-    <!-- Collapsible Section for Local Storage -->
-    <button class="collapsible">Local Storage Method</button>
-    <div class="content">
-        <div class="toggle-buttons">
-            <button onclick="toggleColumn('local', 'chapters')">Toggle Chapters</button>
-            <button onclick="toggleColumn('local', 'verses')">Toggle Verses</button>
-        </div>
-        <table id="localTable">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Day</th>
-                    <th>Books/Chapters Covered</th>
-                    <th class="chapters hidden">Chapters</th>
-                    <th class="verses hidden">Verses</th>
-                    <th class="icon-column"><span title="Completed">✔️</span></th>
-                </tr>
-            </thead>
-            <tbody>
-                <!-- Rows will be dynamically added -->
-            </tbody>
-        </table>
-    </div>
 
     <!-- Collapsible Section for Firebase -->
     <button class="collapsible">Firebase Method</button>
