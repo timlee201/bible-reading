@@ -1,0 +1,13 @@
+[
+    {"date": "Fri 22 Nov", "day": "Day 1", "chapters": "Matthew 1–9", "numChapters": 9, "verses": 243},
+    {"date": "Sat 23 Nov", "day": "Day 2", "chapters": "Matthew 10–18", "numChapters": 9, "verses": 236},
+    {"date": "Sun 24 Nov", "day": "Day 3", "chapters": "Matthew 19–28", "numChapters": 10, "verses": 242},
+    {"date": "Mon 25 Nov", "day": "Day 4", "chapters": "Mark 1–8", "numChapters": 8, "verses": 237},
+    {"date": "Tue 26 Nov", "day": "Day 5", "chapters": "Mark 9–16", "numChapters": 8, "verses": 230},
+    {"date": "Wed 27 Nov", "day": "Day 6", "chapters": "Luke 1–8", "numChapters": 8, "verses": 245},
+    {"date": "Thu 28 Nov", "day": "Day 7", "chapters": "Luke 9–16", "numChapters": 8, "verses": 262},
+    {"date": "Fri 29 Nov", "day": "Day 8", "chapters": "Luke 17–24", "numChapters": 8, "verses": 243},
+    {"date": "Sat 30 Nov", "day": "Day 9", "chapters": "John 1–7", "numChapters": 7, "verses": 241},
+    {"date": "Sun 01 Dec", "day": "Day 10", "chapters": "John 8–14", "numChapters": 7, "verses": 242}
+    // Add the rest of the schedule here...
+]
