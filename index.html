@@ -121,23 +121,51 @@
     <script>
         // Firebase configuration
         const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-            databaseURL: "https://YOUR_PROJECT_ID.firebaseio.com",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_PROJECT_ID.appspot.com",
-            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-            appId: "YOUR_APP_ID"
+            apiKey: "AIzaSyA5KVNtwdH0vjTyHwpHVPqf5tNOVUeOxbA",
+            authDomain: "biblereadingapp-a3c7a.firebaseapp.com",
+            databaseURL: "https://biblereadingapp-a3c7a-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "biblereadingapp-a3c7a",
+            storageBucket: "biblereadingapp-a3c7a.firebasestorage.app",
+            messagingSenderId: "368092993348",
+            appId: "1:368092993348:web:478a0cb7825979fa68e911"
         };
-
+    
         // Initialize Firebase
         const app = firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
 
+        // Full schedule data
         const schedule = [
-            { date: "Fri 22 Nov", day: "Day 1", chapters: "Matthew 1–9", numChapters: 9, verses: 243 },
-            { date: "Sat 23 Nov", day: "Day 2", chapters: "Matthew 10–18", numChapters: 9, verses: 236 },
-            // Add more rows here...
+            {"date": "Fri 22 Nov", "day": "Day 1", "chapters": "Matthew 1–9", "numChapters": 9, "verses": 243},
+            {"date": "Sat 23 Nov", "day": "Day 2", "chapters": "Matthew 10–18", "numChapters": 9, "verses": 236},
+            {"date": "Sun 24 Nov", "day": "Day 3", "chapters": "Matthew 19–28", "numChapters": 10, "verses": 242},
+            {"date": "Mon 25 Nov", "day": "Day 4", "chapters": "Mark 1–8", "numChapters": 8, "verses": 237},
+            {"date": "Tue 26 Nov", "day": "Day 5", "chapters": "Mark 9–16", "numChapters": 8, "verses": 230},
+            {"date": "Wed 27 Nov", "day": "Day 6", "chapters": "Luke 1–8", "numChapters": 8, "verses": 245},
+            {"date": "Thu 28 Nov", "day": "Day 7", "chapters": "Luke 9–16", "numChapters": 8, "verses": 262},
+            {"date": "Fri 29 Nov", "day": "Day 8", "chapters": "Luke 17–24", "numChapters": 8, "verses": 243},
+            {"date": "Sat 30 Nov", "day": "Day 9", "chapters": "John 1–7", "numChapters": 7, "verses": 241},
+            {"date": "Sun 01 Dec", "day": "Day 10", "chapters": "John 8–14", "numChapters": 7, "verses": 242},
+            {"date": "Mon 02 Dec", "day": "Day 11", "chapters": "John 15–21", "numChapters": 7, "verses": 155},
+            {"date": "Tue 03 Dec", "day": "Day 12", "chapters": "Acts 1–8", "numChapters": 8, "verses": 242},
+            {"date": "Wed 04 Dec", "day": "Day 13", "chapters": "Acts 9–16", "numChapters": 8, "verses": 242},
+            {"date": "Thu 05 Dec", "day": "Day 14", "chapters": "Acts 17–24", "numChapters": 8, "verses": 244},
+            {"date": "Fri 06 Dec", "day": "Day 15", "chapters": "Romans 1–8", "numChapters": 8, "verses": 222},
+            {"date": "Sat 07 Dec", "day": "Day 16", "chapters": "Romans 9–16", "numChapters": 8, "verses": 199},
+            {"date": "Sun 08 Dec", "day": "Day 17", "chapters": "1 Corinthians 1–8", "numChapters": 8, "verses": 192},
+            {"date": "Mon 09 Dec", "day": "Day 18", "chapters": "1 Corinthians 9–16", "numChapters": 8, "verses": 196},
+            {"date": "Tue 10 Dec", "day": "Day 19", "chapters": "2 Corinthians 1–13", "numChapters": 13, "verses": 257},
+            {"date": "Wed 11 Dec", "day": "Day 20", "chapters": "Galatians 1–6, Ephesians 1–3", "numChapters": 9, "verses": 221},
+            {"date": "Thu 12 Dec", "day": "Day 21", "chapters": "Ephesians 4–6, Philippians 1–4, Colossians 1–2", "numChapters": 10, "verses": 216},
+            {"date": "Fri 13 Dec", "day": "Day 22", "chapters": "Colossians 3–4, 1 Thessalonians 1–5", "numChapters": 7, "verses": 156},
+            {"date": "Sat 14 Dec", "day": "Day 23", "chapters": "2 Thessalonians 1–3, 1 Timothy 1–6", "numChapters": 9, "verses": 159},
+            {"date": "Sun 15 Dec", "day": "Day 24", "chapters": "2 Timothy 1–4, Titus 1–3, Philemon", "numChapters": 8, "verses": 116},
+            {"date": "Mon 16 Dec", "day": "Day 25", "chapters": "Hebrews 1–7", "numChapters": 7, "verses": 202},
+            {"date": "Tue 17 Dec", "day": "Day 26", "chapters": "Hebrews 8–13, James 1–3", "numChapters": 9, "verses": 200},
+            {"date": "Wed 18 Dec", "day": "Day 27", "chapters": "James 4–5, 1 Peter 1–5, 2 Peter 1", "numChapters": 8, "verses": 151},
+            {"date": "Thu 19 Dec", "day": "Day 28", "chapters": "2 Peter 2–3, 1 John 1–5, 2 John, 3 John", "numChapters": 8, "verses": 155},
+            {"date": "Fri 20 Dec", "day": "Day 29", "chapters": "Jude, Revelation 1–8", "numChapters": 8, "verses": 208},
+            {"date": "Sat 21 Dec", "day": "Day 30", "chapters": "Revelation 9–22", "numChapters": 14, "verses": 281}
         ];
 
         // Generate Local Storage Table
@@ -240,39 +268,7 @@
             loadProgressFirebase();
         };
 
-            // Full schedule data
-    const schedule = [
-        {"date": "Fri 22 Nov", "day": "Day 1", "chapters": "Matthew 1–9", "numChapters": 9, "verses": 243},
-        {"date": "Sat 23 Nov", "day": "Day 2", "chapters": "Matthew 10–18", "numChapters": 9, "verses": 236},
-        {"date": "Sun 24 Nov", "day": "Day 3", "chapters": "Matthew 19–28", "numChapters": 10, "verses": 242},
-        {"date": "Mon 25 Nov", "day": "Day 4", "chapters": "Mark 1–8", "numChapters": 8, "verses": 237},
-        {"date": "Tue 26 Nov", "day": "Day 5", "chapters": "Mark 9–16", "numChapters": 8, "verses": 230},
-        {"date": "Wed 27 Nov", "day": "Day 6", "chapters": "Luke 1–8", "numChapters": 8, "verses": 245},
-        {"date": "Thu 28 Nov", "day": "Day 7", "chapters": "Luke 9–16", "numChapters": 8, "verses": 262},
-        {"date": "Fri 29 Nov", "day": "Day 8", "chapters": "Luke 17–24", "numChapters": 8, "verses": 243},
-        {"date": "Sat 30 Nov", "day": "Day 9", "chapters": "John 1–7", "numChapters": 7, "verses": 241},
-        {"date": "Sun 01 Dec", "day": "Day 10", "chapters": "John 8–14", "numChapters": 7, "verses": 242},
-        {"date": "Mon 02 Dec", "day": "Day 11", "chapters": "John 15–21", "numChapters": 7, "verses": 155},
-        {"date": "Tue 03 Dec", "day": "Day 12", "chapters": "Acts 1–8", "numChapters": 8, "verses": 242},
-        {"date": "Wed 04 Dec", "day": "Day 13", "chapters": "Acts 9–16", "numChapters": 8, "verses": 242},
-        {"date": "Thu 05 Dec", "day": "Day 14", "chapters": "Acts 17–24", "numChapters": 8, "verses": 244},
-        {"date": "Fri 06 Dec", "day": "Day 15", "chapters": "Romans 1–8", "numChapters": 8, "verses": 222},
-        {"date": "Sat 07 Dec", "day": "Day 16", "chapters": "Romans 9–16", "numChapters": 8, "verses": 199},
-        {"date": "Sun 08 Dec", "day": "Day 17", "chapters": "1 Corinthians 1–8", "numChapters": 8, "verses": 192},
-        {"date": "Mon 09 Dec", "day": "Day 18", "chapters": "1 Corinthians 9–16", "numChapters": 8, "verses": 196},
-        {"date": "Tue 10 Dec", "day": "Day 19", "chapters": "2 Corinthians 1–13", "numChapters": 13, "verses": 257},
-        {"date": "Wed 11 Dec", "day": "Day 20", "chapters": "Galatians 1–6, Ephesians 1–3", "numChapters": 9, "verses": 221},
-        {"date": "Thu 12 Dec", "day": "Day 21", "chapters": "Ephesians 4–6, Philippians 1–4, Colossians 1–2", "numChapters": 10, "verses": 216},
-        {"date": "Fri 13 Dec", "day": "Day 22", "chapters": "Colossians 3–4, 1 Thessalonians 1–5", "numChapters": 7, "verses": 156},
-        {"date": "Sat 14 Dec", "day": "Day 23", "chapters": "2 Thessalonians 1–3, 1 Timothy 1–6", "numChapters": 9, "verses": 159},
-        {"date": "Sun 15 Dec", "day": "Day 24", "chapters": "2 Timothy 1–4, Titus 1–3, Philemon", "numChapters": 8, "verses": 116},
-        {"date": "Mon 16 Dec", "day": "Day 25", "chapters": "Hebrews 1–7", "numChapters": 7, "verses": 202},
-        {"date": "Tue 17 Dec", "day": "Day 26", "chapters": "Hebrews 8–13, James 1–3", "numChapters": 9, "verses": 200},
-        {"date": "Wed 18 Dec", "day": "Day 27", "chapters": "James 4–5, 1 Peter 1–5, 2 Peter 1", "numChapters": 8, "verses": 151},
-        {"date": "Thu 19 Dec", "day": "Day 28", "chapters": "2 Peter 2–3, 1 John 1–5, 2 John, 3 John", "numChapters": 8, "verses": 155},
-        {"date": "Fri 20 Dec", "day": "Day 29", "chapters": "Jude, Revelation 1–8", "numChapters": 8, "verses": 208},
-        {"date": "Sat 21 Dec", "day": "Day 30", "chapters": "Revelation 9–22", "numChapters": 14, "verses": 281}
-    ];
+
     </script>
 </body>
 </html>
