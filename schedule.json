@@ -9,5 +9,4 @@
     {"date": "Fri 29 Nov", "day": "Day 8", "chapters": "Luke 17–24", "numChapters": 8, "verses": 243},
     {"date": "Sat 30 Nov", "day": "Day 9", "chapters": "John 1–7", "numChapters": 7, "verses": 241},
     {"date": "Sun 01 Dec", "day": "Day 10", "chapters": "John 8–14", "numChapters": 7, "verses": 242}
-    // Add the rest of the schedule here...
 ]
