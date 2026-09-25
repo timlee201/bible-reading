@@ -1,4 +1,3 @@
-// Firebase configuration using CDN scripts
 const firebaseConfig = {
     apiKey: "AIzaSyA5KVNtwdH0vjTyHwpHVPqf5tNOVUeOxbA",
     authDomain: "biblereadingapp-a3c7a.firebaseapp.com",
@@ -9,81 +8,114 @@ const firebaseConfig = {
     appId: "1:368092993348:web:478a0cb7825979fa68e911"
 };
 
-// Initialize Firebase
-const app = firebase.initializeApp(firebaseConfig);
-const database = firebase.database();
+const STORAGE_KEY = "nt-reading-progress";
+let database = null;
 
-// Initialize collapsible sections
-const collapsibles = document.querySelectorAll(".collapsible");
-collapsibles.forEach(button => {
-    button.addEventListener("click", function () {
-        this.classList.toggle("active");
-        const content = this.nextElementSibling;
-        if (content.style.display === "block") {
-            content.style.display = "none";
-        } else {
-            content.style.display = "block";
-        }
-    });
+try {
+    if (typeof firebase !== "undefined") {
+        firebase.initializeApp(firebaseConfig);
+        database = firebase.database();
+    }
+} catch (error) {
+    console.error("Firebase unavailable, using this device only:", error);
+    database = null;
+}
+
+const statusEl = document.getElementById("status");
+const listEl = document.getElementById("schedule");
+const toggleDetailsBtn = document.getElementById("toggleDetails");
+
+toggleDetailsBtn.addEventListener("click", () => {
+    const showing = listEl.classList.toggle("show-details");
+    toggleDetailsBtn.textContent = showing
+        ? "Hide chapter and verse counts"
+        : "Show chapter and verse counts";
 });
 
-// Load schedule from schedule.json
-fetch("schedule.json")
-    .then(response => response.json())
-    .then(schedule => {
-        populateFirebaseTable(schedule); // Populate table with schedule data
-        loadProgressFirebase(schedule); // Load saved progress
-    })
-    .catch(error => console.error("Error loading schedule:", error));
+function readLocal() {
+    try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+    } catch {
+        return {};
+    }
+}
 
-// Populate Firebase Table
-function populateFirebaseTable(schedule) {
-    const firebaseTableBody = document.getElementById("firebaseTable").querySelector("tbody");
+function writeLocal(progress) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+}
 
-    schedule.forEach((item, index) => {
-        const row = `
-            <tr>
-                <td>${item.date}</td>
-                <td>${item.day}</td>
-                <td>${item.chapters}</td>
-                <td class="chapters hidden">${item.numChapters}</td>
-                <td class="verses hidden">${item.verses}</td>
-                <td class="icon-column">
-                    <input type="checkbox" id="firebaseCheck${index}" onclick="saveProgressFirebase(${index})">
-                </td>
-            </tr>
-        `;
-        firebaseTableBody.innerHTML += row;
+function applyProgress(progress) {
+    Object.keys(progress).forEach(key => {
+        const checkbox = document.getElementById(`check${key}`);
+        if (checkbox) checkbox.checked = Boolean(progress[key]);
     });
 }
 
-// Save Progress to Firebase
-function saveProgressFirebase(index) {
-    const checkbox = document.getElementById(`firebaseCheck${index}`);
-    const isChecked = checkbox.checked;
-    const progressRef = firebase.database().ref(`progress/day${index}`);
-    progressRef.set(isChecked);
+function saveProgress(index) {
+    const checkbox = document.getElementById(`check${index}`);
+    const progress = readLocal();
+    progress[index] = checkbox.checked;
+    writeLocal(progress);
+    if (database) {
+        database.ref(`progress/day${index}`).set(checkbox.checked).catch(error => {
+            console.error("Could not save progress online:", error);
+        });
+    }
 }
 
-// Load Progress from Firebase
-function loadProgressFirebase(schedule) {
-    const progressRef = firebase.database().ref('progress');
-    progressRef.once('value', snapshot => {
-        const progress = snapshot.val();
-        if (progress) {
+function loadProgress() {
+    applyProgress(readLocal());
+    if (!database) return;
+    database.ref("progress").once("value")
+        .then(snapshot => {
+            const progress = snapshot.val();
+            if (!progress) return;
+            const normalized = {};
             Object.keys(progress).forEach(key => {
-                const index = key.replace('day', '');
-                const checkbox = document.getElementById(`firebaseCheck${index}`);
-                if (checkbox) checkbox.checked = progress[key];
+                normalized[key.replace("day", "")] = progress[key];
             });
-        }
+            writeLocal({ ...readLocal(), ...normalized });
+            applyProgress(normalized);
+        })
+        .catch(error => {
+            console.error("Could not load online progress:", error);
+        });
+}
+
+function render(schedule) {
+    listEl.innerHTML = "";
+    schedule.forEach((item, index) => {
+        const row = document.createElement("li");
+        row.className = "day";
+        row.innerHTML = `
+            <label>
+                <input type="checkbox" id="check${index}">
+                <span class="reading">
+                    <span class="meta">${item.date} · ${item.day}</span>
+                    <span class="chapters">${item.chapters}</span>
+                    <span class="details">${item.numChapters} chapters · ${item.verses} verses</span>
+                </span>
+            </label>
+        `;
+        row.querySelector("input").addEventListener("change", () => saveProgress(index));
+        listEl.appendChild(row);
     });
 }
 
-// Toggle visibility of columns
-function toggleColumn(section, columnClass) {
-    const elements = document.querySelectorAll(`#${section}Table .${columnClass}`);
-    elements.forEach(element => {
-        element.classList.toggle('hidden');
+fetch("schedule.json")
+    .then(response => {
+        if (!response.ok) throw new Error(`Schedule request failed (${response.status})`);
+        return response.json();
+    })
+    .then(schedule => {
+        if (!Array.isArray(schedule) || schedule.length === 0) {
+            throw new Error("Schedule is empty");
+        }
+        render(schedule);
+        loadProgress();
+    })
+    .catch(error => {
+        console.error("Error loading schedule:", error);
+        statusEl.hidden = false;
+        statusEl.textContent = "The reading list could not be loaded.";
     });
-}
