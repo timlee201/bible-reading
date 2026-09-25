@@ -4,41 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>New Testament Reading Schedule</title>
-    <!-- Link to external CSS -->
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="favicon.ico" type="image/x-icon">
-    <!-- Firebase SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
 </head>
 <body>
     <h1>New Testament Reading Schedule</h1>
-
-    <!-- Collapsible Section for Firebase -->
-    <button class="collapsible">Firebase Method</button>
-    <div class="content">
-        <div class="toggle-buttons">
-            <button onclick="toggleColumn('firebase', 'chapters')">Toggle Chapters</button>
-            <button onclick="toggleColumn('firebase', 'verses')">Toggle Verses</button>
-        </div>
-        <table id="firebaseTable">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Day</th>
-                    <th>Books/Chapters Covered</th>
-                    <th class="chapters hidden">Chapters</th>
-                    <th class="verses hidden">Verses</th>
-                    <th class="icon-column"><span title="Completed">✔️</span></th>
-                </tr>
-            </thead>
-            <tbody>
-                <!-- Rows will be dynamically added -->
-            </tbody>
-        </table>
+    <p id="status" class="status" hidden></p>
+    <div class="toolbar">
+        <button type="button" id="toggleDetails">Show chapter and verse counts</button>
     </div>
-    
-    <!-- Link to external JavaScript -->
+    <ol id="schedule" class="schedule"></ol>
     <script src="script.js"></script>
 </body>
 </html>
