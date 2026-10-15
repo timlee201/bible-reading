@@ -291,16 +291,37 @@
       if (!isNaN(parsed)) activeStartedAt = parsed;
     }
 
-    function resumeJob() {
-      var active = rememberedJob();
-      if (!active) return;
+    function beginPolling(id, startedAt) {
       pollGeneration += 1;
-      activeStartedAt = active.startedAt || Date.now();
+      activeStartedAt = startedAt || Date.now();
       document.getElementById('links').textContent = '';
       document.getElementById('choose').disabled = true;
       setJob('');
       showProgress({ status: 'transcribing' });
-      poll(active.id);
+      poll(id);
+    }
+
+    function resumeJob() {
+      var active = rememberedJob();
+      if (active) {
+        beginPolling(active.id, active.startedAt || Date.now());
+        return;
+      }
+      fetch('/api/jobs/current').then(function (res) {
+        if (res.status === 204) return null;
+        return res.json().catch(function () { return null; }).then(function (body) {
+          return { ok: res.ok, body: body };
+        });
+      }).then(function (result) {
+        if (!result || !result.ok || !result.body) return;
+        var id = result.body.transcriptId;
+        var status = result.body.status;
+        if (typeof id !== 'string' || !id) return;
+        if (status !== 'uploading' && status !== 'transcribing' && status !== 'saving') return;
+        if (rememberedJob()) return;
+        rememberJob(id, Date.now());
+        beginPolling(id, Date.now());
+      }).catch(function () {});
     }
 
     function finishJob(id, job) {

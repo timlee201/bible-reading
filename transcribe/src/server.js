@@ -14,6 +14,7 @@ import {
 import {
   failJob,
   jobView,
+  latestOpenJob,
   loadJob,
   saveVisibleParagraphs,
   submitDriveFile,
@@ -329,6 +330,14 @@ export function createApp() {
       console.error(safeError(error));
       res.status(status).json({ error: safeError(error) });
     }
+  }));
+
+  app.get('/api/jobs/current', requireSession, asyncHandler(async (req, res) => {
+    const drive = driveFromSession(req.sessionUser);
+    const state = await loadState(drive);
+    const job = latestOpenJob(state.jobs);
+    if (!job) return res.status(204).end();
+    res.json({ transcriptId: job.id, status: job.status });
   }));
 
   app.get('/api/jobs/:transcriptId', requireSession, asyncHandler(async (req, res) => {

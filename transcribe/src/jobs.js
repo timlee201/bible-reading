@@ -190,6 +190,18 @@ export async function syncJob(drive, transcriptId, { assumeCompleted = false } =
   return job;
 }
 
+const RESUMABLE = new Set(['uploading', 'transcribing', 'saving']);
+
+export function latestOpenJob(jobs) {
+  let chosen = null;
+  for (const job of Object.values(jobs || {})) {
+    if (!job || typeof job.id !== 'string' || !job.id) continue;
+    if (!RESUMABLE.has(job.status)) continue;
+    if (!chosen || String(job.createdAt || '') > String(chosen.createdAt || '')) chosen = job;
+  }
+  return chosen;
+}
+
 export function jobView(job) {
   const seconds = Number(job.audioDuration);
   return {
