@@ -127,17 +127,28 @@
         if (window.gapi) gapi.load('picker', function () {});
         return;
       }
-      var view = new google.picker.DocsView(google.picker.ViewId.DOCS);
-      view.setMimeTypes(MIME);
-      view.setIncludeFolders(true);
-      view.setSelectFolderEnabled(false);
-      if (google.picker.DocsViewMode) view.setMode(google.picker.DocsViewMode.LIST);
+      var myDrive = new google.picker.DocsView(google.picker.ViewId.DOCS);
+      myDrive.setMimeTypes(MIME);
+      myDrive.setIncludeFolders(true);
+      myDrive.setSelectFolderEnabled(false);
+      if (google.picker.DocsViewMode) myDrive.setMode(google.picker.DocsViewMode.LIST);
+      myDrive.setParent('root');
+      myDrive.setOwnedByMe(true);
+      myDrive.setLabel('My Drive');
+      var shared = new google.picker.DocsView(google.picker.ViewId.DOCS);
+      shared.setMimeTypes(MIME);
+      shared.setIncludeFolders(true);
+      shared.setSelectFolderEnabled(false);
+      if (google.picker.DocsViewMode) shared.setMode(google.picker.DocsViewMode.LIST);
+      shared.setOwnedByMe(false);
+      shared.setLabel('Shared with me');
       var builder = new google.picker.PickerBuilder()
         .setOAuthToken(session.accessToken)
         .setDeveloperKey(session.pickerApiKey)
         .setTitle('Choose a recording')
         .setOrigin(window.location.origin)
-        .addView(view)
+        .addView(myDrive)
+        .addView(shared)
         .setCallback(onPicked);
       builder.build().setVisible(true);
     });
