@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>__TITLE__</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm; }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 12mm auto;
+      max-width: 180mm;
+      color: #1a1a1a;
+      background: #fff;
+      font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+      font-size: 12pt;
+      line-height: 1.5;
+    }
+    h1 {
+      font-size: 16pt;
+      font-weight: 600;
+      line-height: 1.3;
+      margin: 0 0 1em;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 0 0 1.25rem;
+      font-family: system-ui, sans-serif;
+      font-size: 1rem;
+      line-height: 1.3;
+    }
+    .toolbar button {
+      font: inherit;
+      font-size: 1rem;
+      padding: 0.5rem 0.8rem;
+      min-height: 44px;
+      border-radius: 6px;
+      border: 1px solid #1a1a1a;
+      background: #fff;
+      color: #1a1a1a;
+      cursor: pointer;
+    }
+    .toolbar button:disabled { opacity: 0.6; cursor: default; }
+    .status {
+      flex-basis: 100%;
+      min-height: 1.3em;
+      margin: 0;
+      font-size: 0.95rem;
+    }
+    .status.is-error { color: #8a1f1f; }
+    .block { margin: 0 0 0.85em; }
+    .speaker {
+      margin: 0 0 0.15em;
+      font-family: system-ui, sans-serif;
+      font-size: 10.5pt;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      break-after: avoid;
+    }
+    .text { margin: 0; }
+    @media print {
+      .no-print { display: none !important; }
+      body { margin: 0; max-width: none; }
+    }
+  </style>
+</head>
+<body data-app-origin="__APP_ORIGIN__" data-transcript-id="__TRANSCRIPT_ID__" data-file-token="__FILE_TOKEN__">
+  <div class="toolbar no-print">
+    <button type="button" id="clean">Clean up</button>
+    <button type="button" id="revert">Revert</button>
+    <button type="button" id="save">Save</button>
+    <button type="button" id="print">Print</button>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+  </div>
+  <h1>__TITLE__</h1>
+  <article id="transcript">
+__BODY__
+  </article>
+  <script type="application/json" id="original-paragraphs">__ORIGINAL_JSON__</script>
+  <script>
+    (function () {
+      var body = document.body;
+      var appOrigin = body.getAttribute('data-app-origin') || '';
+      var transcriptId = body.getAttribute('data-transcript-id') || '';
+      var fileToken = body.getAttribute('data-file-token') || '';
+      var article = document.getElementById('transcript');
+      var statusEl = document.getElementById('status');
+      var busy = false;
+
+      function setStatus(message, isError) {
+        statusEl.textContent = message || '';
+        statusEl.classList.toggle('is-error', Boolean(isError));
+      }
+
+      function setBusy(next) {
+        busy = next;
+        ['clean', 'revert', 'save', 'print'].forEach(function (id) {
+          document.getElementById(id).disabled = next;
+        });
+      }
+
+      function readVisible() {
+        return Array.prototype.map.call(article.querySelectorAll('.block'), function (block) {
+          var textEl = block.querySelector('.text');
+          return {
+            speaker: block.getAttribute('data-speaker') || '',
+            text: textEl ? textEl.textContent : ''
+          };
+        });
+      }
+
+      var current = readVisible();
+
+      function renderParagraphs(paragraphs) {
+        article.textContent = '';
+        var previous = null;
+        (paragraphs || []).forEach(function (paragraph) {
+          var speaker = paragraph && paragraph.speaker != null ? String(paragraph.speaker) : '';
+          var text = paragraph && paragraph.text != null ? String(paragraph.text) : '';
+          var block = document.createElement('section');
+          block.className = 'block';
+          block.setAttribute('data-speaker', speaker);
+          if (speaker && speaker !== previous) {
+            var label = document.createElement('p');
+            label.className = 'speaker';
+            label.textContent = speaker;
+            block.appendChild(label);
+          }
+          var textEl = document.createElement('p');
+          textEl.className = 'text';
+          textEl.textContent = text;
+          block.appendChild(textEl);
+          article.appendChild(block);
+          previous = speaker;
+        });
+        current = readVisible();
+      }
+
+      function originalParagraphs() {
+        return JSON.parse(document.getElementById('original-paragraphs').textContent);
+      }
+
+      function endpoint(path) {
+        return appOrigin + path;
+      }
+
+      function readBody(res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (!res.ok) {
+            var error = new Error(data.error || ('Request failed (' + res.status + ')'));
+            error.status = res.status;
+            throw error;
+          }
+          return data;
+        });
+      }
+
+      function cleanUp() {
+        if (busy) return;
+        setBusy(true);
+        setStatus('Cleaning up…', false);
+        fetch(endpoint('/api/transcripts/' + encodeURIComponent(transcriptId) + '/clean'), {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + fileToken,
+            'Content-Type': 'application/json'
+          }
+        }).then(readBody).then(function (data) {
+          renderParagraphs(data.paragraphs || []);
+          setStatus('Showing cleaned text. Save to write it to Drive.', false);
+        }).catch(function (error) {
+          setStatus(error.message || 'Clean up failed', true);
+        }).finally(function () {
+          setBusy(false);
+        });
+      }
+
+      function revert() {
+        if (busy) return;
+        try {
+          renderParagraphs(originalParagraphs());
+          setStatus('Restored the original transcript.', false);
+        } catch (error) {
+          setStatus('Could not restore the original transcript.', true);
+        }
+      }
+
+      function save() {
+        if (busy) return;
+        setBusy(true);
+        setStatus('Saving…', false);
+        fetch(endpoint('/api/transcripts/' + encodeURIComponent(transcriptId)), {
+          method: 'PUT',
+          headers: {
+            Authorization: 'Bearer ' + fileToken,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ paragraphs: current })
+        }).then(readBody).then(function () {
+          setStatus('Saved to Drive.', false);
+        }).catch(function (error) {
+          setStatus(error.message || 'Save failed', true);
+        }).finally(function () {
+          setBusy(false);
+        });
+      }
+
+      function printPage() {
+        window.print();
+      }
+
+      document.getElementById('clean').addEventListener('click', cleanUp);
+      document.getElementById('revert').addEventListener('click', revert);
+      document.getElementById('save').addEventListener('click', save);
+      document.getElementById('print').addEventListener('click', printPage);
+    })();
+  </script>
+</body>
+</html>

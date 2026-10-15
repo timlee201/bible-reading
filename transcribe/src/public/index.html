@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Transcribe</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      color: #1a1a1a;
+      background: #f6f5f2;
+      line-height: 1.45;
+    }
+    main {
+      max-width: 36rem;
+      margin: 0 auto;
+      padding: 1.5rem 1.1rem 3rem;
+    }
+    h1 { font-size: 1.7rem; margin: 0 0 0.4rem; }
+    .lede { margin: 0 0 1.25rem; }
+    .button, button.button, a.button {
+      display: inline-block;
+      min-height: 44px;
+      padding: 0.65rem 1rem;
+      border-radius: 8px;
+      border: 0;
+      background: #1a1a1a;
+      color: #fff;
+      font: inherit;
+      font-size: 1rem;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    button.ghost {
+      display: inline-block;
+      min-height: 44px;
+      margin-left: 0.5rem;
+      padding: 0.65rem 0.9rem;
+      border-radius: 8px;
+      border: 1px solid #1a1a1a;
+      background: transparent;
+      font: inherit;
+      cursor: pointer;
+    }
+    #who { margin: 0 0 0.8rem; color: #333; overflow-wrap: anywhere; }
+    #job, #links { overflow-wrap: anywhere; }
+    #links a { margin-right: 0.75rem; }
+    @media (max-width: 600px) {
+      .button, a.button, #choose { width: 100%; text-align: center; }
+      button.ghost { width: 100%; margin: 0.6rem 0 0; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Transcribe</h1>
+    <p class="lede">Pick a recording from Drive. When the transcript is ready, an HTML file is saved next to the audio.</p>
+    <p id="signed-out">
+      <a class="button" id="sign-in" href="/auth/google">Sign in with Google</a>
+    </p>
+    <section id="signed-in" hidden>
+      <p id="who"></p>
+      <button type="button" class="button" id="choose">Choose a recording</button>
+      <button type="button" class="ghost" id="logout">Sign out</button>
+      <p id="job" role="status"></p>
+      <p id="links"></p>
+    </section>
+  </main>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script>
+    var MIME = [
+      'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave',
+      'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/x-aac',
+      'audio/webm', 'audio/ogg', 'audio/flac', 'audio/x-flac',
+      'audio/3gpp', 'audio/3gpp2', 'audio/amr', 'audio/x-ms-wma',
+      'video/mp4', 'video/webm', 'video/quicktime', 'video/mpeg',
+      'video/x-matroska', 'video/ogg', 'video/3gpp', 'video/3gpp2',
+      'video/x-msvideo', 'video/x-ms-wmv'
+    ].join(',');
+
+    var session = null;
+    var pollTimer = null;
+
+    function showSignedOut() {
+      document.getElementById('signed-out').hidden = false;
+      document.getElementById('signed-in').hidden = true;
+    }
+
+    function showSignedIn() {
+      document.getElementById('signed-out').hidden = true;
+      document.getElementById('signed-in').hidden = false;
+      document.getElementById('who').textContent = session.email;
+    }
+
+    function setJob(message) {
+      document.getElementById('job').textContent = message || '';
+    }
+
+    fetch('/api/session').then(function (res) {
+      if (!res.ok) {
+        showSignedOut();
+        return null;
+      }
+      return res.json();
+    }).then(function (data) {
+      if (!data) return;
+      session = data;
+      showSignedIn();
+      if (window.gapi) gapi.load('picker', function () {});
+    }).catch(function () {
+      showSignedOut();
+    });
+
+    document.getElementById('logout').addEventListener('click', function () {
+      fetch('/auth/logout', { method: 'POST' }).finally(function () {
+        window.location.href = '/';
+      });
+    });
+
+    document.getElementById('choose').addEventListener('click', function () {
+      if (!session) return;
+      if (!window.google || !google.picker) {
+        setJob('Picker is still loading. Try again in a moment.');
+        if (window.gapi) gapi.load('picker', function () {});
+        return;
+      }
+      var view = new google.picker.DocsView(google.picker.ViewId.DOCS);
+      view.setMimeTypes(MIME);
+      view.setIncludeFolders(true);
+      view.setSelectFolderEnabled(false);
+      if (google.picker.DocsViewMode) view.setMode(google.picker.DocsViewMode.LIST);
+      var builder = new google.picker.PickerBuilder()
+        .setOAuthToken(session.accessToken)
+        .setDeveloperKey(session.pickerApiKey)
+        .setTitle('Choose a recording')
+        .setOrigin(window.location.origin)
+        .addView(view)
+        .setCallback(onPicked);
+      builder.build().setVisible(true);
+    });
+
+    function onPicked(data) {
+      if (!data || data.action !== google.picker.Action.PICKED) return;
+      var file = data.docs && data.docs[0];
+      if (!file) return;
+      startJob(file.id, file.name || 'recording');
+    }
+
+    function startJob(fileId, name) {
+      if (pollTimer) clearTimeout(pollTimer);
+      document.getElementById('links').textContent = '';
+      setJob('Uploading ' + name + '… this can take a few minutes.');
+      document.getElementById('choose').disabled = true;
+      fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId: fileId })
+      }).then(function (res) {
+        return res.json().then(function (body) {
+          return { ok: res.ok, body: body };
+        });
+      }).then(function (result) {
+        if (!result.ok) throw new Error(result.body.error || 'Could not start transcription');
+        setJob('Transcribing…');
+        poll(result.body.transcriptId);
+      }).catch(function (error) {
+        setJob(error.message || 'Could not start transcription');
+        document.getElementById('choose').disabled = false;
+      });
+    }
+
+    function poll(id) {
+      fetch('/api/jobs/' + encodeURIComponent(id)).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          return { ok: res.ok, status: res.status, body: body };
+        });
+      }).then(function (result) {
+        if (result.status === 401 || result.status === 403 || result.status === 404) {
+          var stopped = new Error(result.body.error || 'Status check failed');
+          stopped.stop = true;
+          throw stopped;
+        }
+        if (!result.ok) throw new Error(result.body.error || 'Status check failed');
+        var job = result.body;
+        if (job.status === 'done') {
+          setJob('Transcript ready. The HTML file is next to the audio in Drive.');
+          var links = document.getElementById('links');
+          links.textContent = '';
+          var open = document.createElement('a');
+          open.href = '/t/' + encodeURIComponent(id);
+          open.textContent = 'Open transcript';
+          links.appendChild(open);
+          if (job.htmlFileId) {
+            var drive = document.createElement('a');
+            drive.href = 'https://drive.google.com/file/d/' + encodeURIComponent(job.htmlFileId) + '/view';
+            drive.textContent = 'Open in Drive';
+            drive.target = '_blank';
+            drive.rel = 'noopener';
+            links.appendChild(drive);
+          }
+          document.getElementById('choose').disabled = false;
+          return;
+        }
+        if (job.status === 'error') {
+          setJob(job.error || 'Transcription failed');
+          document.getElementById('choose').disabled = false;
+          return;
+        }
+        setJob('Transcribing…');
+        pollTimer = setTimeout(function () { poll(id); }, 4000);
+      }).catch(function (error) {
+        if (error.stop) {
+          setJob(error.message || 'Status check failed');
+          document.getElementById('choose').disabled = false;
+          return;
+        }
+        setJob((error.message || 'Status check failed') + ' Retrying…');
+        pollTimer = setTimeout(function () { poll(id); }, 4000);
+      });
+    }
+  </script>
+</body>
+</html>
