@@ -46,8 +46,34 @@
       cursor: pointer;
     }
     #who { margin: 0 0 0.8rem; color: #333; overflow-wrap: anywhere; }
-    #job, #links { overflow-wrap: anywhere; }
+    #job, #links, #progress-label { overflow-wrap: anywhere; }
     #links a { margin-right: 0.75rem; }
+    #progress { margin-top: 1rem; }
+    .progress-track {
+      position: relative;
+      height: 0.7rem;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #ddd9d0;
+    }
+    .progress-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 40%;
+      height: 100%;
+      border-radius: inherit;
+      background: #1a1a1a;
+      animation: progress-indeterminate 1.1s ease-in-out infinite;
+    }
+    @keyframes progress-indeterminate {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(250%); }
+    }
+    #progress-label { margin: 0.55rem 0 0; font-size: 1.05rem; }
+    @media (prefers-reduced-motion: reduce) {
+      .progress-bar { animation: none; width: 100%; opacity: 0.45; }
+    }
     @media (max-width: 600px) {
       .button, a.button, #choose { width: 100%; text-align: center; }
       button.ghost { width: 100%; margin: 0.6rem 0 0; }
@@ -65,6 +91,12 @@
       <p id="who"></p>
       <button type="button" class="button" id="choose">Choose a recording</button>
       <button type="button" class="ghost" id="logout">Sign out</button>
+      <div id="progress" hidden>
+        <div class="progress-track" role="progressbar" aria-label="Transcription progress" aria-valuetext="">
+          <div class="progress-bar"></div>
+        </div>
+        <p id="progress-label"></p>
+      </div>
       <p id="job" role="status"></p>
       <p id="links"></p>
     </section>
@@ -83,6 +115,12 @@
 
     var session = null;
     var pollTimer = null;
+    var pollGeneration = 0;
+    var clockTimer = null;
+    var progressJob = null;
+    var activeStartedAt = 0;
+    var progressStage = '';
+    var ACTIVE_KEY = 'transcribeActiveJob';
 
     function showSignedOut() {
       document.getElementById('signed-out').hidden = false;
@@ -93,6 +131,7 @@
       document.getElementById('signed-out').hidden = true;
       document.getElementById('signed-in').hidden = false;
       document.getElementById('who').textContent = session.email;
+      resumeJob();
     }
 
     function setJob(message) {
@@ -160,10 +199,147 @@
       startJob(file.id, file.name || 'recording');
     }
 
-    function startJob(fileId, name) {
-      if (pollTimer) clearTimeout(pollTimer);
+    function rememberedJob() {
+      try {
+        var parsed = JSON.parse(sessionStorage.getItem(ACTIVE_KEY) || 'null');
+        if (!parsed || typeof parsed.id !== 'string' || !parsed.id) return null;
+        return parsed;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function rememberJob(id, startedAt) {
+      try {
+        sessionStorage.setItem(ACTIVE_KEY, JSON.stringify({ id: id, startedAt: startedAt }));
+      } catch (error) {}
+    }
+
+    function forgetJob() {
+      try {
+        sessionStorage.removeItem(ACTIVE_KEY);
+      } catch (error) {}
+    }
+
+    function stageLabel(job) {
+      var status = job && job.status;
+      var assembly = job && job.assemblyStatus;
+      if (status === 'uploading') return 'Uploading the recording';
+      if (status === 'saving') return 'Saving the transcript to Drive';
+      if (status === 'transcribing' && assembly === 'queued') return 'Waiting for transcription to start';
+      return 'Transcribing';
+    }
+
+    function audioNote(seconds) {
+      if (typeof seconds !== 'number' || !isFinite(seconds) || seconds <= 0) return '';
+      var minutes = Math.max(1, Math.round(seconds / 60));
+      return 'About ' + minutes + (minutes === 1 ? ' minute' : ' minutes') + ' of audio';
+    }
+
+    function formatElapsed(ms) {
+      var total = Math.max(0, Math.floor(ms / 1000));
+      var hours = Math.floor(total / 3600);
+      var minutes = Math.floor((total % 3600) / 60);
+      var seconds = total % 60;
+      function pad(value) { return value < 10 ? '0' + value : String(value); }
+      if (hours > 0) return hours + ':' + pad(minutes) + ':' + pad(seconds);
+      return minutes + ':' + pad(seconds);
+    }
+
+    function progressLine(job) {
+      var parts = [stageLabel(job)];
+      var audio = audioNote(job && job.audioDuration);
+      if (audio) parts.push(audio);
+      parts.push(formatElapsed(Date.now() - activeStartedAt));
+      return parts.join(' · ');
+    }
+
+    function renderProgress() {
+      if (!progressJob) return;
+      var line = progressLine(progressJob);
+      document.getElementById('progress-label').textContent = line;
+      var stage = stageLabel(progressJob);
+      if (stage !== progressStage) {
+        progressStage = stage;
+        document.querySelector('.progress-track').setAttribute('aria-valuetext', stage);
+      }
+    }
+
+    function showProgress(job) {
+      progressJob = job;
+      var box = document.getElementById('progress');
+      box.hidden = false;
+      renderProgress();
+      if (!clockTimer) clockTimer = setInterval(renderProgress, 1000);
+    }
+
+    function hideProgress() {
+      progressJob = null;
+      progressStage = '';
+      var box = document.getElementById('progress');
+      box.hidden = true;
+      document.getElementById('progress-label').textContent = '';
+      document.querySelector('.progress-track').setAttribute('aria-valuetext', '');
+      if (clockTimer) {
+        clearInterval(clockTimer);
+        clockTimer = null;
+      }
+    }
+
+    function adoptStarted(job) {
+      var parsed = Date.parse(job && job.createdAt || '');
+      if (!isNaN(parsed)) activeStartedAt = parsed;
+    }
+
+    function resumeJob() {
+      var active = rememberedJob();
+      if (!active) return;
+      pollGeneration += 1;
+      activeStartedAt = active.startedAt || Date.now();
       document.getElementById('links').textContent = '';
-      setJob('Uploading ' + name + '… this can take a few minutes.');
+      document.getElementById('choose').disabled = true;
+      setJob('');
+      showProgress({ status: 'transcribing' });
+      poll(active.id);
+    }
+
+    function finishJob(id, job) {
+      hideProgress();
+      forgetJob();
+      setJob('Transcript ready. The HTML file is next to the audio in Drive.');
+      var links = document.getElementById('links');
+      links.textContent = '';
+      var open = document.createElement('a');
+      open.href = '/t/' + encodeURIComponent(id);
+      open.textContent = 'Open transcript';
+      links.appendChild(open);
+      if (job.htmlFileId) {
+        var drive = document.createElement('a');
+        drive.href = 'https://drive.google.com/file/d/' + encodeURIComponent(job.htmlFileId) + '/view';
+        drive.textContent = 'Open in Drive';
+        drive.target = '_blank';
+        drive.rel = 'noopener';
+        links.appendChild(drive);
+      }
+      document.getElementById('choose').disabled = false;
+    }
+
+    function failVisible(message) {
+      hideProgress();
+      forgetJob();
+      setJob(message || 'Transcription failed');
+      document.getElementById('choose').disabled = false;
+    }
+
+    function startJob(fileId) {
+      pollGeneration += 1;
+      var generation = pollGeneration;
+      if (pollTimer) clearTimeout(pollTimer);
+      forgetJob();
+      activeStartedAt = Date.now();
+      document.getElementById('links').textContent = '';
+      setJob('');
+      showProgress({ status: 'uploading' });
       document.getElementById('choose').disabled = true;
       fetch('/api/jobs', {
         method: 'POST',
@@ -174,21 +350,25 @@
           return { ok: res.ok, body: body };
         });
       }).then(function (result) {
+        if (generation !== pollGeneration) return;
         if (!result.ok) throw new Error(result.body.error || 'Could not start transcription');
-        setJob('Transcribing…');
+        rememberJob(result.body.transcriptId, activeStartedAt);
+        showProgress({ status: result.body.status || 'transcribing' });
         poll(result.body.transcriptId);
       }).catch(function (error) {
-        setJob(error.message || 'Could not start transcription');
-        document.getElementById('choose').disabled = false;
+        if (generation !== pollGeneration) return;
+        failVisible(error.message || 'Could not start transcription');
       });
     }
 
     function poll(id) {
+      var generation = pollGeneration;
       fetch('/api/jobs/' + encodeURIComponent(id)).then(function (res) {
         return res.json().catch(function () { return {}; }).then(function (body) {
           return { ok: res.ok, status: res.status, body: body };
         });
       }).then(function (result) {
+        if (generation !== pollGeneration) return;
         if (result.status === 401 || result.status === 403 || result.status === 404) {
           var stopped = new Error(result.body.error || 'Status check failed');
           stopped.stop = true;
@@ -196,40 +376,35 @@
         }
         if (!result.ok) throw new Error(result.body.error || 'Status check failed');
         var job = result.body;
+        adoptStarted(job);
+        rememberJob(id, activeStartedAt);
         if (job.status === 'done') {
-          setJob('Transcript ready. The HTML file is next to the audio in Drive.');
-          var links = document.getElementById('links');
-          links.textContent = '';
-          var open = document.createElement('a');
-          open.href = '/t/' + encodeURIComponent(id);
-          open.textContent = 'Open transcript';
-          links.appendChild(open);
-          if (job.htmlFileId) {
-            var drive = document.createElement('a');
-            drive.href = 'https://drive.google.com/file/d/' + encodeURIComponent(job.htmlFileId) + '/view';
-            drive.textContent = 'Open in Drive';
-            drive.target = '_blank';
-            drive.rel = 'noopener';
-            links.appendChild(drive);
-          }
-          document.getElementById('choose').disabled = false;
+          finishJob(id, job);
           return;
         }
         if (job.status === 'error') {
-          setJob(job.error || 'Transcription failed');
-          document.getElementById('choose').disabled = false;
+          failVisible(job.error || 'Transcription failed');
           return;
         }
-        setJob('Transcribing…');
-        pollTimer = setTimeout(function () { poll(id); }, 4000);
+        setJob('');
+        showProgress(job);
+        pollTimer = setTimeout(function () {
+          if (generation !== pollGeneration) return;
+          poll(id);
+        }, 4000);
       }).catch(function (error) {
+        if (generation !== pollGeneration) return;
         if (error.stop) {
-          setJob(error.message || 'Status check failed');
-          document.getElementById('choose').disabled = false;
+          failVisible(error.message || 'Status check failed');
           return;
         }
-        setJob((error.message || 'Status check failed') + ' Retrying…');
-        pollTimer = setTimeout(function () { poll(id); }, 4000);
+        setJob('');
+        showProgress(progressJob || { status: 'transcribing' });
+        document.getElementById('progress-label').textContent = progressLine(progressJob) + ' · Retrying…';
+        pollTimer = setTimeout(function () {
+          if (generation !== pollGeneration) return;
+          poll(id);
+        }, 4000);
       });
     }
   </script>

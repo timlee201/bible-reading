@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env src/server.js",
-    "test": "node --test src/render.test.js"
+    "test": "node --test src/render.test.js src/jobs.test.js"
   },
   "dependencies": {
     "express": "^4.21.2",

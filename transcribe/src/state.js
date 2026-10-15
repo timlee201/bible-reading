@@ -10,6 +10,17 @@ function mediaBody(text) {
   };
 }
 
+function knownAssemblyStatus(status) {
+  if (status === 'queued' || status === 'processing' || status === 'completed' || status === 'error') return status;
+  return null;
+}
+
+function knownAudioDuration(value) {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  return seconds;
+}
+
 function normalizeJob(id, job) {
   return {
     id: job.id || id,
@@ -22,6 +33,8 @@ function normalizeJob(id, job) {
     error: job.error || null,
     originalParagraphs: Array.isArray(job.originalParagraphs) ? job.originalParagraphs : [],
     createdAt: job.createdAt,
+    assemblyStatus: knownAssemblyStatus(job.assemblyStatus),
+    audioDuration: knownAudioDuration(job.audioDuration),
   };
 }
 
