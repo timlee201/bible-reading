@@ -13,6 +13,8 @@ import {
   listDriveChildren,
   readDriveFileText,
   refreshAccessToken,
+  renameDriveFile,
+  trashDriveFile,
 } from './google.js';
 import {
   failJob,
@@ -20,6 +22,7 @@ import {
   latestOpenJob,
   listJobViews,
   loadJob,
+  renameJobsForDriveFile,
   saveVisibleParagraphs,
   submitDriveFile,
   syncJob,
@@ -29,6 +32,7 @@ import {
   buildFolderView,
   describeMediaFile,
   isMediaMime,
+  normalizeDriveName,
   normalizeFolderId,
 } from './library.js';
 import { renderTranscript } from './render.js';
@@ -386,6 +390,26 @@ export function createApp() {
       parentId,
       folder: false,
     });
+  }));
+
+  app.patch('/api/drive/file/:fileId', requireSession, asyncHandler(async (req, res) => {
+    const fileId = req.params.fileId;
+    if (!/^[a-zA-Z0-9_-]+$/.test(fileId)) return res.status(400).json({ error: 'Invalid file' });
+    const name = normalizeDriveName(req.body?.name);
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+    const drive = driveFromSession(req.sessionUser);
+    const updated = await renameDriveFile(drive, fileId, name);
+    const savedName = updated.name || name;
+    await renameJobsForDriveFile(drive, fileId, savedName);
+    res.json({ id: updated.id || fileId, name: savedName });
+  }));
+
+  app.delete('/api/drive/file/:fileId', requireSession, asyncHandler(async (req, res) => {
+    const fileId = req.params.fileId;
+    if (!/^[a-zA-Z0-9_-]+$/.test(fileId)) return res.status(400).json({ error: 'Invalid file' });
+    const drive = driveFromSession(req.sessionUser);
+    await trashDriveFile(drive, fileId);
+    res.status(204).end();
   }));
 
   app.get('/api/drive/html/:fileId', requireSession, asyncHandler(async (req, res) => {

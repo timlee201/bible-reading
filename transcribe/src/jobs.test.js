@@ -8,6 +8,7 @@ import {
   buildFolderView,
   folderListQuery,
   isTranscribed,
+  normalizeDriveName,
 } from './library.js';
 
 test('job view includes AssemblyAI status and audio duration when the poll already has them', () => {
@@ -36,6 +37,15 @@ test('latest open job is the newest one still uploading, transcribing, or saving
   });
   assert.equal(job.id, 'current');
   assert.equal(latestOpenJob({ done: { id: 'done', status: 'done', createdAt: '2026-10-15T21:00:00.000Z' } }), null);
+});
+
+test('drive rename rejects an empty name or a slash', () => {
+  assert.equal(normalizeDriveName('  2015. Session 4.mp4  '), '2015. Session 4.mp4');
+  assert.equal(normalizeDriveName(''), null);
+  assert.equal(normalizeDriveName('   '), null);
+  assert.equal(normalizeDriveName('a/b'), null);
+  assert.equal(normalizeDriveName('.'), null);
+  assert.equal(normalizeDriveName('..'), null);
 });
 
 test('breadcrumbs walk parents up to My Drive', () => {

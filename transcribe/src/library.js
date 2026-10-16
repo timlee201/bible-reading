@@ -3,6 +3,15 @@ import { htmlFileName } from './render.js';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const ACTIVE = new Set(['uploading', 'transcribing', 'saving']);
 
+export function normalizeDriveName(value) {
+  if (typeof value !== 'string') return null;
+  const name = value.trim();
+  if (!name || name.length > 255) return null;
+  if (name === '.' || name === '..') return null;
+  if (/[\\/\u0000-\u001f]/.test(name)) return null;
+  return name;
+}
+
 export function normalizeFolderId(value) {
   if (value == null || value === '' || value === 'root') return 'root';
   if (value === 'shared') return 'shared';

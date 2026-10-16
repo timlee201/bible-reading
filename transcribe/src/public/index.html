@@ -184,6 +184,54 @@
       line-height: inherit;
     }
     textarea.text:focus { outline: 2px solid #d9d3c7; }
+    .context-menu {
+      position: fixed;
+      z-index: 30;
+      min-width: 12rem;
+      margin: 0;
+      padding: 0.3rem;
+      background: #fff;
+      border: 1px solid #e4e0d8;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+    .context-menu button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 0;
+      background: transparent;
+      font: inherit;
+      padding: 0.5rem 0.65rem;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .context-menu button:hover,
+    .context-menu button:focus { background: #eceae4; }
+    .context-menu button.danger { color: #8a1f1f; }
+    .context-menu button:disabled { opacity: 0.45; cursor: default; }
+    dialog {
+      border: 1px solid #e4e0d8;
+      border-radius: 10px;
+      padding: 1rem;
+      font: inherit;
+      color: inherit;
+      max-width: 24rem;
+      width: calc(100% - 2rem);
+    }
+    dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+    dialog h2 { font-size: 1.05rem; margin: 0 0 0.75rem; }
+    dialog label { display: block; }
+    dialog input {
+      display: block;
+      width: 100%;
+      margin-top: 0.35rem;
+      font: inherit;
+      padding: 0.5rem;
+      border: 1px solid #cfcabe;
+      border-radius: 6px;
+    }
+    .dialog-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.9rem; }
     @media (prefers-reduced-motion: reduce) {
       .progress-bar { animation: none; width: 100%; opacity: 0.45; }
     }
@@ -250,6 +298,23 @@
       </section>
     </div>
   </div>
+  <div id="context-menu" class="context-menu no-print" role="menu" hidden>
+    <button type="button" role="menuitem" id="menu-open" data-action="open">Open</button>
+    <button type="button" role="menuitem" id="menu-transcribe" data-action="transcribe">Transcribe</button>
+    <button type="button" role="menuitem" id="menu-rename" data-action="rename">Rename</button>
+    <button type="button" role="menuitem" id="menu-delete" class="danger" data-action="delete">Delete</button>
+    <button type="button" role="menuitem" id="menu-drive" data-action="drive">Open in Drive</button>
+  </div>
+  <dialog id="rename-dialog">
+    <form id="rename-form">
+      <h2>Rename</h2>
+      <label>Name <input id="rename-input" name="name" autocomplete="off" maxlength="255" required></label>
+      <div class="dialog-actions">
+        <button type="button" class="ghost" id="rename-cancel">Cancel</button>
+        <button type="submit" class="button">Rename</button>
+      </div>
+    </form>
+  </dialog>
   <script src="https://apis.google.com/js/api.js"></script>
   <script>
     var MIME = [
@@ -475,6 +540,9 @@
         button.appendChild(name);
         button.appendChild(note);
         button.addEventListener('click', function () { openFolder(folder.id); });
+        item.addEventListener('contextmenu', function (event) {
+          openContextMenu(event, { id: folder.id, name: folder.name || 'Folder', folder: true });
+        });
         item.appendChild(button);
         list.appendChild(item);
       });
@@ -501,6 +569,18 @@
           button.appendChild(failed);
         }
         button.addEventListener('click', function () { onFileClick(file); });
+        item.addEventListener('contextmenu', function (event) {
+          openContextMenu(event, {
+            id: file.id,
+            name: file.name || 'Recording',
+            folder: false,
+            transcribed: !!file.transcribed,
+            transcriptId: file.transcriptId || '',
+            htmlFileId: file.htmlFileId || '',
+            jobStatus: file.jobStatus || '',
+            jobId: file.jobId || ''
+          });
+        });
         item.appendChild(button);
         list.appendChild(item);
       });
@@ -509,6 +589,128 @@
       if (running.length && !progressJob) showProgress({ status: running[0].jobStatus || 'transcribing' });
       else placeProgress();
     }
+
+    var menuEntry = null;
+
+    function closeContextMenu() {
+      $('context-menu').hidden = true;
+    }
+
+    function openContextMenu(event, entry) {
+      event.preventDefault();
+      event.stopPropagation();
+      menuEntry = entry;
+      var openItem = $('menu-open');
+      openItem.hidden = entry.folder ? false : !entry.transcribed;
+      openItem.textContent = entry.folder ? 'Open' : 'Open transcript';
+      var transcribeItem = $('menu-transcribe');
+      transcribeItem.hidden = !!entry.folder;
+      transcribeItem.disabled = isRunning(entry.jobStatus);
+      var menu = $('context-menu');
+      menu.hidden = false;
+      menu.style.left = '0px';
+      menu.style.top = '0px';
+      var width = menu.offsetWidth;
+      var height = menu.offsetHeight;
+      var x = event.clientX;
+      var y = event.clientY;
+      if (x + width > window.innerWidth - 8) x = Math.max(8, window.innerWidth - width - 8);
+      if (y + height > window.innerHeight - 8) y = Math.max(8, window.innerHeight - height - 8);
+      menu.style.left = x + 'px';
+      menu.style.top = y + 'px';
+    }
+
+    function driveUrl(entry) {
+      if (entry.folder) return 'https://drive.google.com/drive/folders/' + encodeURIComponent(entry.id);
+      return 'https://drive.google.com/file/d/' + encodeURIComponent(entry.id) + '/view';
+    }
+
+    function refreshLibrary() {
+      loadTranscripts();
+      return openFolder(currentFolderId);
+    }
+
+    function beginRename(entry) {
+      var input = $('rename-input');
+      input.value = entry.name || '';
+      $('rename-dialog').showModal();
+      input.focus();
+      input.select();
+    }
+
+    function beginDelete(entry) {
+      var kind = entry.folder ? 'folder' : 'file';
+      if (!window.confirm('Move this ' + kind + ' to trash?\n\n' + (entry.name || ''))) return;
+      setJob('');
+      fetch('/api/drive/file/' + encodeURIComponent(entry.id), { method: 'DELETE' }).then(function (res) {
+        if (res.status === 204) return {};
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok) throw new Error(body.error || 'Could not delete that item');
+          return body;
+        });
+      }).then(function () {
+        return refreshLibrary();
+      }).catch(function (error) {
+        setJob(error.message || 'Could not delete that item');
+      });
+    }
+
+    $('context-menu').addEventListener('click', function (event) {
+      var actionEl = event.target.closest ? event.target.closest('[data-action]') : null;
+      var action = actionEl && actionEl.getAttribute('data-action');
+      var entry = menuEntry;
+      if (!action || !entry || actionEl.disabled) return;
+      event.stopPropagation();
+      closeContextMenu();
+      if (action === 'open') {
+        if (entry.folder) openFolder(entry.id);
+        else openEditor(entry);
+      } else if (action === 'transcribe') {
+        startJob(entry.id);
+      } else if (action === 'rename') {
+        beginRename(entry);
+      } else if (action === 'delete') {
+        beginDelete(entry);
+      } else if (action === 'drive') {
+        window.open(driveUrl(entry), '_blank', 'noopener');
+      }
+    });
+
+    document.addEventListener('click', function (event) {
+      if (event.target.closest && event.target.closest('#context-menu')) return;
+      closeContextMenu();
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') closeContextMenu();
+    });
+    window.addEventListener('resize', closeContextMenu);
+    window.addEventListener('scroll', closeContextMenu, true);
+
+    $('rename-cancel').addEventListener('click', function () {
+      $('rename-dialog').close();
+    });
+    $('rename-form').addEventListener('submit', function (event) {
+      event.preventDefault();
+      var entry = menuEntry;
+      var name = $('rename-input').value.trim();
+      if (!entry || !name) return;
+      $('rename-dialog').close();
+      setJob('');
+      fetch('/api/drive/file/' + encodeURIComponent(entry.id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name })
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok) throw new Error(body.error || 'Could not rename that item');
+          return body;
+        });
+      }).then(function () {
+        return refreshLibrary();
+      }).catch(function (error) {
+        setJob(error.message || 'Could not rename that item');
+      });
+    });
 
     function onFileClick(file) {
       if (file.transcribed) {

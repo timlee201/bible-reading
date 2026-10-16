@@ -117,6 +117,24 @@ export async function createHtmlFile(drive, { name, parentFolderId, html }) {
   return res.data.id;
 }
 
+export async function renameDriveFile(drive, fileId, name) {
+  const res = await drive.files.update({
+    fileId,
+    requestBody: { name },
+    fields: 'id,name',
+    supportsAllDrives: true,
+  });
+  return res.data;
+}
+
+export async function trashDriveFile(drive, fileId) {
+  await drive.files.update({
+    fileId,
+    requestBody: { trashed: true },
+    supportsAllDrives: true,
+  });
+}
+
 export async function updateHtmlFile(drive, fileId, html) {
   await drive.files.update({
     fileId,

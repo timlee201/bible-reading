@@ -282,6 +282,18 @@ export async function saveVisibleParagraphs(drive, transcriptId, paragraphs) {
   });
 }
 
+export async function renameJobsForDriveFile(drive, driveFileId, name) {
+  const state = await loadState(drive);
+  let changed = false;
+  for (const job of Object.values(state.jobs || {})) {
+    if (!job || job.driveFileId !== driveFileId) continue;
+    if (job.driveFileName === name) continue;
+    job.driveFileName = name;
+    changed = true;
+  }
+  if (changed) await saveState(drive, state);
+}
+
 export async function loadJob(drive, transcriptId) {
   const state = await loadState(drive);
   return { state, job: state.jobs[transcriptId] || null };

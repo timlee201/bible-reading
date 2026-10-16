@@ -118,6 +118,10 @@ test('signed-in page includes the library sidebar and editor', () => {
   assert.match(page, />Shared with me</);
   assert.match(page, />Transcripts</);
   assert.match(page, /id="breadcrumbs"/);
+  assert.match(page, /id="context-menu"/);
+  assert.match(page, /data-action="transcribe">Transcribe</);
+  assert.match(page, /data-action="rename">Rename</);
+  assert.match(page, /data-action="delete">Delete</);
   assert.match(page, /class="progress-bar"/);
   assert.match(page, /label\.className = 'speaker'/);
   assert.match(page, /@page \{ size: A4; margin: 18mm 16mm; \}/);
