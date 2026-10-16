@@ -1,5 +1,6 @@
 import { Readable } from 'node:stream';
 import { google } from 'googleapis';
+import { folderListQuery } from './library.js';
 
 export const SCOPES = [
   'openid',
@@ -122,6 +123,55 @@ export async function updateHtmlFile(drive, fileId, html) {
     media: mediaBody(html, 'text/html; charset=utf-8'),
     supportsAllDrives: true,
   });
+}
+
+export async function listDriveChildren(drive, folderId) {
+  const q = folderListQuery(folderId);
+  const files = [];
+  let pageToken;
+  do {
+    const params = {
+      q,
+      pageSize: 200,
+      fields: 'nextPageToken, files(id, name, mimeType, trashed)',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    };
+    if (pageToken) params.pageToken = pageToken;
+    const res = await drive.files.list(params);
+    for (const file of res.data.files || []) files.push(file);
+    pageToken = res.data.nextPageToken || undefined;
+  } while (pageToken);
+  return files;
+}
+
+export async function breadcrumbChain(drive, folderId) {
+  const rootRes = await drive.files.get({ fileId: 'root', fields: 'id,name' });
+  const rootId = rootRes.data.id;
+  if (!folderId || folderId === 'root' || folderId === rootId) {
+    return { rootId, chain: [{ id: rootId, name: 'My Drive' }] };
+  }
+  const chain = [];
+  const seen = new Set();
+  let currentId = folderId;
+  while (currentId && !seen.has(currentId)) {
+    seen.add(currentId);
+    if (currentId === rootId) {
+      chain.push({ id: rootId, name: 'My Drive' });
+      break;
+    }
+    let meta;
+    try {
+      meta = await getDriveFile(drive, currentId);
+    } catch {
+      break;
+    }
+    chain.push({ id: meta.id, name: meta.name || 'Folder' });
+    const parentId = Array.isArray(meta.parents) ? meta.parents[0] : '';
+    if (!parentId) break;
+    currentId = parentId;
+  }
+  return { rootId, chain };
 }
 
 export async function readDriveFileText(drive, fileId, { supportsAllDrives = false } = {}) {

@@ -97,6 +97,33 @@ test('toolbar has class no-print', () => {
   assert.doesNotMatch(html, /innerHTML/);
 });
 
+test('HTML-escapes edited paragraph text and keeps the original paragraphs', () => {
+  const original = [{ speaker: 'A', text: 'Hello' }];
+  const html = render({
+    paragraphs: [{ speaker: 'A', text: 'Edited <script>alert(1)</script> & "quotes"' }],
+    originalParagraphs: original,
+  });
+  assert.match(html, /<p class="text">Edited &lt;script&gt;alert\(1\)&lt;\/script&gt; &amp; &quot;quotes&quot;<\/p>/);
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+  const embedded = html.match(/id="original-paragraphs">([\s\S]*?)<\/script>/)[1];
+  assert.doesNotMatch(embedded, /</);
+  assert.deepEqual(JSON.parse(embedded), original);
+  assert.doesNotMatch(html, /<p class="text">Hello<\/p>/);
+});
+
+test('signed-in page includes the library sidebar and editor', () => {
+  const page = fs.readFileSync(new URL('./public/index.html', import.meta.url), 'utf8');
+  assert.match(page, /class="sidebar/);
+  assert.match(page, />My Drive</);
+  assert.match(page, />Shared with me</);
+  assert.match(page, />Transcripts</);
+  assert.match(page, /id="breadcrumbs"/);
+  assert.match(page, /class="progress-bar"/);
+  assert.match(page, /label\.className = 'speaker'/);
+  assert.match(page, /@page \{ size: A4; margin: 18mm 16mm; \}/);
+  assert.doesNotMatch(page, /innerHTML/);
+});
+
 test('original JSON is embedded and is not the visible cleanup', () => {
   const original = [
     { speaker: 'A', text: 'Original line' },

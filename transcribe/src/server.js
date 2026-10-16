@@ -5,9 +5,12 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { cleanParagraphs, getTranscript } from './assemblyai.js';
 import {
+  breadcrumbChain,
   createDrive,
   exchangeCode,
   getAuthUrl,
+  getDriveFile,
+  listDriveChildren,
   readDriveFileText,
   refreshAccessToken,
 } from './google.js';
@@ -15,11 +18,19 @@ import {
   failJob,
   jobView,
   latestOpenJob,
+  listJobViews,
   loadJob,
   saveVisibleParagraphs,
   submitDriveFile,
   syncJob,
 } from './jobs.js';
+import {
+  breadcrumbsFor,
+  buildFolderView,
+  describeMediaFile,
+  isMediaMime,
+  normalizeFolderId,
+} from './library.js';
 import { renderTranscript } from './render.js';
 import {
   fallbackRefreshToken,
@@ -331,6 +342,69 @@ export function createApp() {
     });
   });
 
+  app.get('/api/drive/folder', requireSession, asyncHandler(async (req, res) => {
+    const folderId = normalizeFolderId(typeof req.query.id === 'string' ? req.query.id : 'root');
+    if (!folderId) return res.status(400).json({ error: 'Invalid folder' });
+    const drive = driveFromSession(req.sessionUser);
+    const state = await loadState(drive);
+    const files = await listDriveChildren(drive, folderId);
+    let breadcrumbs;
+    if (folderId === 'root' || folderId === 'shared') {
+      breadcrumbs = breadcrumbsFor(folderId);
+    } else {
+      const walked = await breadcrumbChain(drive, folderId);
+      breadcrumbs = breadcrumbsFor(folderId, walked.chain, walked.rootId);
+    }
+    res.json(buildFolderView({ id: folderId, breadcrumbs, files, jobs: state.jobs }));
+  }));
+
+  app.get('/api/drive/file', requireSession, asyncHandler(async (req, res) => {
+    const fileId = typeof req.query.id === 'string' ? req.query.id : '';
+    if (!/^[a-zA-Z0-9_-]+$/.test(fileId)) return res.status(400).json({ error: 'Invalid file' });
+    const drive = driveFromSession(req.sessionUser);
+    const state = await loadState(drive);
+    const meta = await getDriveFile(drive, fileId);
+    if (meta.mimeType === 'application/vnd.google-apps.folder') {
+      return res.json({ id: meta.id, name: meta.name || 'Folder', folder: true });
+    }
+    const root = await drive.files.get({ fileId: 'root', fields: 'id' });
+    const parent = Array.isArray(meta.parents) ? meta.parents[0] : '';
+    const parentId = parent && parent !== root.data.id ? parent : 'root';
+    let files = [];
+    try {
+      files = await listDriveChildren(drive, parentId);
+    } catch (error) {
+      console.error(safeError(error));
+    }
+    const view = buildFolderView({ id: parentId, breadcrumbs: [], files, jobs: state.jobs });
+    const found = view.files.find((file) => file.id === meta.id)
+      || describeMediaFile(meta, { jobs: state.jobs, siblingNames: [], siblingIds: {} });
+    res.json({
+      ...found,
+      name: meta.name || found.name,
+      mimeType: meta.mimeType || found.mimeType,
+      parentId,
+      folder: false,
+    });
+  }));
+
+  app.get('/api/drive/html/:fileId', requireSession, asyncHandler(async (req, res) => {
+    const fileId = req.params.fileId;
+    if (!/^[a-zA-Z0-9_-]+$/.test(fileId)) return res.status(404).json({ error: 'Not found' });
+    const drive = driveFromSession(req.sessionUser);
+    const meta = await getDriveFile(drive, fileId);
+    const mime = meta.mimeType || '';
+    const name = meta.name || '';
+    if (mime !== 'text/html' && !name.endsWith('.html')) {
+      return res.status(415).json({ error: 'Not an HTML transcript' });
+    }
+    if (isMediaMime(mime)) return res.status(415).json({ error: 'Not an HTML transcript' });
+    const html = await readDriveFileText(drive, fileId, { supportsAllDrives: true });
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(html);
+  }));
+
   app.post('/api/jobs', requireSession, asyncHandler(async (req, res) => {
     const fileId = req.body?.fileId;
     if (typeof fileId !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(fileId)) {
@@ -348,6 +422,12 @@ export function createApp() {
       console.error(safeError(error));
       res.status(status).json({ error: safeError(error) });
     }
+  }));
+
+  app.get('/api/jobs', requireSession, asyncHandler(async (req, res) => {
+    const drive = driveFromSession(req.sessionUser);
+    const state = await loadState(drive);
+    res.json({ jobs: listJobViews(state.jobs) });
   }));
 
   app.get('/api/jobs/current', requireSession, asyncHandler(async (req, res) => {

@@ -6,7 +6,9 @@
   <meta name="robots" content="noindex">
   <title>Transcribe</title>
   <style>
+    @page { size: A4; margin: 18mm 16mm; }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body {
       margin: 0;
       font-family: system-ui, sans-serif;
@@ -14,13 +16,13 @@
       background: #f6f5f2;
       line-height: 1.45;
     }
-    main {
+    .gate {
       max-width: 36rem;
       margin: 0 auto;
       padding: 1.5rem 1.1rem 3rem;
     }
-    h1 { font-size: 1.7rem; margin: 0 0 0.4rem; }
-    .lede { margin: 0 0 1.25rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.75rem; }
+    .lede { margin: 0 0 1rem; }
     .button, button.button, a.button {
       display: inline-block;
       min-height: 44px;
@@ -37,7 +39,7 @@
     button.ghost {
       display: inline-block;
       min-height: 44px;
-      margin-left: 0.5rem;
+      margin-top: 0.6rem;
       padding: 0.65rem 0.9rem;
       border-radius: 8px;
       border: 1px solid #1a1a1a;
@@ -45,10 +47,64 @@
       font: inherit;
       cursor: pointer;
     }
-    #who { margin: 0 0 0.8rem; color: #333; overflow-wrap: anywhere; }
-    #job, #links, #progress-label { overflow-wrap: anywhere; }
-    #links a { margin-right: 0.75rem; }
-    #progress { margin-top: 1rem; }
+    .app { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 16.5rem;
+      flex: none;
+      background: #fff;
+      border-right: 1px solid #e4e0d8;
+      padding: 1rem 0.85rem 1.5rem;
+    }
+    .sidebar h2 {
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin: 1.1rem 0 0.35rem;
+    }
+    #who { margin: 0 0 0.9rem; color: #333; overflow-wrap: anywhere; font-size: 0.92rem; }
+    .sidebar-nav { display: flex; flex-direction: column; gap: 0.2rem; }
+    .sidebar-link, .transcript-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 0;
+      background: transparent;
+      font: inherit;
+      padding: 0.45rem 0.45rem;
+      border-radius: 6px;
+      cursor: pointer;
+      color: inherit;
+    }
+    .sidebar-link[aria-current="page"], .transcript-item:hover, .sidebar-link:hover { background: #eceae4; }
+    .transcript-list, .listing { list-style: none; margin: 0; padding: 0; }
+    .transcript-list { max-height: 42vh; overflow: auto; }
+    .transcript-item { display: flex; justify-content: space-between; gap: 0.6rem; }
+    .transcript-name, .entry-name { overflow-wrap: anywhere; }
+    .transcript-status, .entry-note { color: #555; font-size: 0.82rem; flex: none; }
+    .workspace { flex: 1; min-width: 0; padding: 1rem 1.15rem 3rem; }
+    .breadcrumbs { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin: 0 0 0.8rem; }
+    .crumb, .crumb-current { font: inherit; color: inherit; }
+    .crumb { border: 0; background: transparent; padding: 0.2rem 0; cursor: pointer; text-decoration: underline; }
+    .crumb-sep { color: #777; }
+    .listing { background: #fff; border: 1px solid #e4e0d8; border-radius: 10px; }
+    .entry {
+      display: flex;
+      width: 100%;
+      justify-content: space-between;
+      gap: 0.75rem;
+      text-align: left;
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid #eeeae3;
+      padding: 0.8rem 0.85rem;
+      font: inherit;
+      cursor: pointer;
+    }
+    .entry-row:last-child .entry { border-bottom: 0; }
+    .empty { padding: 0.9rem 0.85rem; color: #555; }
+    #job { overflow-wrap: anywhere; min-height: 1.3em; }
+    #progress { margin: 0 0 0.8rem; }
+    .entry-row #progress { margin: 0 0.85rem 0.75rem; }
     .progress-track {
       position: relative;
       height: 0.7rem;
@@ -71,36 +127,129 @@
       100% { transform: translateX(250%); }
     }
     #progress-label { margin: 0.55rem 0 0; font-size: 1.05rem; }
+    .editor-sheet {
+      max-width: 180mm;
+      margin: 0 auto;
+      background: #fff;
+      color: #1a1a1a;
+      padding: 1.25rem 1.3rem 2.5rem;
+      border-radius: 10px;
+      font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+      font-size: 12pt;
+      line-height: 1.5;
+    }
+    .editor-sheet h1 { font-size: 16pt; font-weight: 600; line-height: 1.3; margin: 0 0 1em; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 0 0 1.25rem;
+      font-family: system-ui, sans-serif;
+      font-size: 1rem;
+      line-height: 1.3;
+    }
+    .toolbar button {
+      font: inherit;
+      font-size: 1rem;
+      padding: 0.5rem 0.8rem;
+      min-height: 44px;
+      border-radius: 6px;
+      border: 1px solid #1a1a1a;
+      background: #fff;
+      color: #1a1a1a;
+      cursor: pointer;
+    }
+    .toolbar button:disabled { opacity: 0.6; cursor: default; }
+    .status { flex-basis: 100%; min-height: 1.3em; margin: 0; font-size: 0.95rem; }
+    .status.is-error { color: #8a1f1f; }
+    .block { margin: 0 0 0.85em; }
+    .speaker {
+      margin: 0 0 0.15em;
+      font-family: system-ui, sans-serif;
+      font-size: 10.5pt;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+    textarea.text {
+      display: block;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      resize: vertical;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      line-height: inherit;
+    }
+    textarea.text:focus { outline: 2px solid #d9d3c7; }
     @media (prefers-reduced-motion: reduce) {
       .progress-bar { animation: none; width: 100%; opacity: 0.45; }
     }
-    @media (max-width: 600px) {
+    @media (max-width: 800px) {
+      .app { flex-direction: column; }
+      .sidebar { width: auto; border-right: 0; border-bottom: 1px solid #e4e0d8; }
       .button, a.button, #choose { width: 100%; text-align: center; }
-      button.ghost { width: 100%; margin: 0.6rem 0 0; }
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body { margin: 0; background: #fff; }
+      .app { display: block; min-height: 0; }
+      .workspace { padding: 0; }
+      .editor-sheet { max-width: none; padding: 0; border-radius: 0; }
+      textarea.text { border: 0; outline: none; }
     }
   </style>
 </head>
 <body>
-  <main>
+  <main class="gate" id="signed-out">
     <h1>Transcribe</h1>
     <p class="lede">Pick a recording from Drive. When the transcript is ready, an HTML file is saved next to the audio.</p>
-    <p id="signed-out">
+    <p>
       <a class="button" id="sign-in" href="/auth/google">Sign in with Google</a>
     </p>
-    <section id="signed-in" hidden>
+  </main>
+  <div id="signed-in" class="app" hidden>
+    <aside class="sidebar no-print">
+      <h1>Transcribe</h1>
       <p id="who"></p>
+      <nav class="sidebar-nav" aria-label="Drive">
+        <button type="button" class="sidebar-link" id="open-my-drive">My Drive</button>
+        <button type="button" class="sidebar-link" id="open-shared">Shared with me</button>
+      </nav>
+      <h2>Transcripts</h2>
+      <ul class="transcript-list" id="transcript-list"></ul>
       <button type="button" class="button" id="choose">Choose a recording</button>
       <button type="button" class="ghost" id="logout">Sign out</button>
-      <div id="progress" hidden>
-        <div class="progress-track" role="progressbar" aria-label="Transcription progress" aria-valuetext="">
-          <div class="progress-bar"></div>
+    </aside>
+    <div class="workspace">
+      <nav class="breadcrumbs no-print" id="breadcrumbs" aria-label="Folder path"></nav>
+      <div id="progress-park">
+        <div id="progress" hidden>
+          <div class="progress-track" role="progressbar" aria-label="Transcription progress" aria-valuetext="">
+            <div class="progress-bar"></div>
+          </div>
+          <p id="progress-label"></p>
         </div>
-        <p id="progress-label"></p>
       </div>
-      <p id="job" role="status"></p>
-      <p id="links"></p>
-    </section>
-  </main>
+      <p id="job" class="no-print" role="status"></p>
+      <div id="library-view">
+        <ul class="listing" id="listing"></ul>
+      </div>
+      <section id="editor-view" class="editor-sheet" hidden>
+        <div class="toolbar no-print">
+          <button type="button" id="clean">Clean up</button>
+          <button type="button" id="revert">Revert</button>
+          <button type="button" id="save">Save</button>
+          <button type="button" id="print">Print</button>
+          <p id="editor-status" class="status" role="status" aria-live="polite"></p>
+        </div>
+        <h1 id="editor-title"></h1>
+        <article id="editor-body"></article>
+      </section>
+    </div>
+  </div>
   <script src="https://apis.google.com/js/api.js"></script>
   <script>
     var MIME = [
@@ -120,22 +269,36 @@
     var progressJob = null;
     var activeStartedAt = 0;
     var progressStage = '';
+    var activeFileId = '';
+    var followedJob = '';
+    var currentFolderId = 'root';
+    var currentBreadcrumbs = [];
+    var folderGeneration = 0;
+    var editorGeneration = 0;
+    var editorTranscriptId = '';
+    var editorOriginal = [];
+    var editorHasOriginal = false;
+    var editorBusy = false;
     var ACTIVE_KEY = 'transcribeActiveJob';
 
+    function $(id) { return document.getElementById(id); }
+
     function showSignedOut() {
-      document.getElementById('signed-out').hidden = false;
-      document.getElementById('signed-in').hidden = true;
+      $('signed-out').hidden = false;
+      $('signed-in').hidden = true;
     }
 
     function showSignedIn() {
-      document.getElementById('signed-out').hidden = true;
-      document.getElementById('signed-in').hidden = false;
-      document.getElementById('who').textContent = session.email;
+      $('signed-out').hidden = true;
+      $('signed-in').hidden = false;
+      $('who').textContent = session.email;
+      openFolder('root');
+      loadTranscripts();
       resumeJob();
     }
 
     function setJob(message) {
-      document.getElementById('job').textContent = message || '';
+      $('job').textContent = message || '';
     }
 
     fetch('/api/session').then(function (res) {
@@ -153,13 +316,16 @@
       showSignedOut();
     });
 
-    document.getElementById('logout').addEventListener('click', function () {
+    $('logout').addEventListener('click', function () {
       fetch('/auth/logout', { method: 'POST' }).finally(function () {
         window.location.href = '/';
       });
     });
 
-    document.getElementById('choose').addEventListener('click', function () {
+    $('open-my-drive').addEventListener('click', function () { openFolder('root'); });
+    $('open-shared').addEventListener('click', function () { openFolder('shared'); });
+
+    $('choose').addEventListener('click', function () {
       if (!session) return;
       if (!window.google || !google.picker) {
         setJob('Picker is still loading. Try again in a moment.');
@@ -195,8 +361,444 @@
     function onPicked(data) {
       if (!data || data.action !== google.picker.Action.PICKED) return;
       var file = data.docs && data.docs[0];
-      if (!file) return;
-      startJob(file.id, file.name || 'recording');
+      if (!file || !file.id) return;
+      jumpToFile(file.id);
+    }
+
+    function jumpToFile(fileId) {
+      fetch('/api/drive/file?id=' + encodeURIComponent(fileId)).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok) throw new Error(body.error || 'Could not open that file');
+          return body;
+        });
+      }).then(function (info) {
+        if (info.folder) {
+          openFolder(info.id);
+          return;
+        }
+        openFolder(info.parentId || 'root').then(function () {
+          if (info.transcribed) openEditor(info);
+          else if (isRunning(info.jobStatus)) {
+            activeFileId = info.id;
+            placeProgress();
+          } else startJob(info.id || fileId);
+        });
+      }).catch(function (error) {
+        setJob(error.message || 'Could not open that file');
+      });
+    }
+
+    function highlightNav() {
+      var root = currentBreadcrumbs[0] && currentBreadcrumbs[0].id;
+      $('open-my-drive').setAttribute('aria-current', root === 'root' ? 'page' : 'false');
+      $('open-shared').setAttribute('aria-current', root === 'shared' ? 'page' : 'false');
+    }
+
+    function renderBreadcrumbs(crumbs) {
+      var nav = $('breadcrumbs');
+      nav.textContent = '';
+      currentBreadcrumbs = crumbs || [];
+      currentBreadcrumbs.forEach(function (crumb, index) {
+        if (index) {
+          var sep = document.createElement('span');
+          sep.className = 'crumb-sep';
+          sep.textContent = '/';
+          nav.appendChild(sep);
+        }
+        if (crumb.file) {
+          var current = document.createElement('span');
+          current.className = 'crumb-current';
+          current.textContent = crumb.name || '';
+          current.setAttribute('aria-current', 'page');
+          nav.appendChild(current);
+          return;
+        }
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'crumb';
+        button.textContent = crumb.name || '';
+        button.addEventListener('click', function () { openFolder(crumb.id); });
+        nav.appendChild(button);
+      });
+      highlightNav();
+    }
+
+    function parkProgress() {
+      var park = $('progress-park');
+      var progress = $('progress');
+      if (park && progress && progress.parentNode !== park) park.appendChild(progress);
+    }
+
+    function placeProgress() {
+      var progress = $('progress');
+      var park = $('progress-park');
+      if (!progress || !park) return;
+      if (!progressJob) {
+        park.appendChild(progress);
+        progress.hidden = true;
+        return;
+      }
+      var row = activeFileId ? document.getElementById('row-' + activeFileId) : null;
+      if (row && !$('library-view').hidden) row.appendChild(progress);
+      else park.appendChild(progress);
+      progress.hidden = false;
+    }
+
+    function isRunning(status) {
+      return status === 'uploading' || status === 'transcribing' || status === 'saving';
+    }
+
+    function renderListing(data) {
+      parkProgress();
+      var list = $('listing');
+      list.textContent = '';
+      var folders = data.folders || [];
+      var files = data.files || [];
+      if (!folders.length && !files.length) {
+        var empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = 'This folder has no recordings.';
+        list.appendChild(empty);
+      }
+      folders.forEach(function (folder) {
+        var item = document.createElement('li');
+        item.className = 'entry-row';
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'entry';
+        var name = document.createElement('span');
+        name.className = 'entry-name';
+        name.textContent = folder.name || 'Folder';
+        var note = document.createElement('span');
+        note.className = 'entry-note';
+        note.textContent = 'Folder';
+        button.appendChild(name);
+        button.appendChild(note);
+        button.addEventListener('click', function () { openFolder(folder.id); });
+        item.appendChild(button);
+        list.appendChild(item);
+      });
+      files.forEach(function (file) {
+        var item = document.createElement('li');
+        item.className = 'entry-row';
+        item.id = 'row-' + file.id;
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'entry';
+        var name = document.createElement('span');
+        name.className = 'entry-name';
+        name.textContent = file.name || 'Recording';
+        button.appendChild(name);
+        if (file.transcribed) {
+          var done = document.createElement('span');
+          done.className = 'entry-note';
+          done.textContent = 'Transcribed';
+          button.appendChild(done);
+        } else if (file.jobStatus === 'error') {
+          var failed = document.createElement('span');
+          failed.className = 'entry-note';
+          failed.textContent = 'error';
+          button.appendChild(failed);
+        }
+        button.addEventListener('click', function () { onFileClick(file); });
+        item.appendChild(button);
+        list.appendChild(item);
+      });
+      var running = files.filter(function (file) { return isRunning(file.jobStatus); });
+      if (!activeFileId && running.length === 1) activeFileId = running[0].id;
+      if (running.length && !progressJob) showProgress({ status: running[0].jobStatus || 'transcribing' });
+      else placeProgress();
+    }
+
+    function onFileClick(file) {
+      if (file.transcribed) {
+        openEditor(file);
+        return;
+      }
+      if (isRunning(file.jobStatus) || (progressJob && activeFileId === file.id)) {
+        activeFileId = file.id;
+        if (file.jobId) {
+          var known = rememberedJob();
+          var started = known && known.id === file.jobId ? known.startedAt : Date.now();
+          rememberJob(file.jobId, started);
+          beginPolling(file.jobId, started);
+        } else {
+          placeProgress();
+        }
+        return;
+      }
+      startJob(file.id);
+    }
+
+    function openFolder(id) {
+      editorGeneration += 1;
+      $('editor-view').hidden = true;
+      $('library-view').hidden = false;
+      currentFolderId = id || 'root';
+      folderGeneration += 1;
+      var generation = folderGeneration;
+      setJob('');
+      return fetch('/api/drive/folder?id=' + encodeURIComponent(currentFolderId)).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok) throw new Error(body.error || 'Could not open that folder');
+          return body;
+        });
+      }).then(function (data) {
+        if (generation !== folderGeneration) return;
+        renderBreadcrumbs(data.breadcrumbs || []);
+        renderListing(data);
+      }).catch(function (error) {
+        if (generation !== folderGeneration) return;
+        setJob(error.message || 'Could not open that folder');
+      });
+    }
+
+    function parseTranscriptHtml(html) {
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      var titleEl = doc.querySelector('h1');
+      var originalNode = doc.getElementById('original-paragraphs');
+      var originals = [];
+      var hasOriginal = false;
+      if (originalNode) {
+        hasOriginal = true;
+        try { originals = JSON.parse(originalNode.textContent || '[]'); } catch (error) { originals = []; }
+      }
+      var paragraphs = Array.prototype.map.call(doc.querySelectorAll('section.block'), function (block) {
+        var textEl = block.querySelector('.text');
+        return {
+          speaker: block.getAttribute('data-speaker') || '',
+          text: textEl ? textEl.textContent : ''
+        };
+      });
+      return {
+        title: titleEl ? titleEl.textContent : '',
+        paragraphs: paragraphs,
+        originals: originals,
+        hasOriginal: hasOriginal,
+        transcriptId: doc.body ? (doc.body.getAttribute('data-transcript-id') || '') : ''
+      };
+    }
+
+    function renderEditorParagraphs(paragraphs) {
+      var body = $('editor-body');
+      body.textContent = '';
+      var previous = null;
+      (paragraphs || []).forEach(function (paragraph) {
+        var speaker = paragraph && paragraph.speaker != null ? String(paragraph.speaker) : '';
+        var text = paragraph && paragraph.text != null ? String(paragraph.text) : '';
+        var block = document.createElement('section');
+        block.className = 'block';
+        block.setAttribute('data-speaker', speaker);
+        if (speaker && speaker !== previous) {
+          var label = document.createElement('p');
+          label.className = 'speaker';
+          label.textContent = speaker;
+          block.appendChild(label);
+        }
+        var area = document.createElement('textarea');
+        area.className = 'text';
+        area.value = text;
+        area.rows = Math.min(14, Math.max(2, Math.ceil(text.length / 64) || 2));
+        area.setAttribute('aria-label', speaker ? ('Paragraph, ' + speaker) : 'Paragraph');
+        block.appendChild(area);
+        body.appendChild(block);
+        previous = speaker;
+      });
+    }
+
+    function readEditor() {
+      return Array.prototype.map.call($('editor-body').querySelectorAll('.block'), function (block) {
+        var area = block.querySelector('.text');
+        return {
+          speaker: block.getAttribute('data-speaker') || '',
+          text: area ? area.value : ''
+        };
+      });
+    }
+
+    function openEditor(file) {
+      var transcriptId = file.transcriptId || '';
+      var htmlFileId = file.htmlFileId || '';
+      if (!transcriptId && !htmlFileId) {
+        setJob('This recording has no transcript to open.');
+        return;
+      }
+      editorGeneration += 1;
+      var generation = editorGeneration;
+      setEditorStatus('', false);
+      setJob('');
+      var url = transcriptId
+        ? '/t/' + encodeURIComponent(transcriptId)
+        : '/api/drive/html/' + encodeURIComponent(htmlFileId);
+      fetch(url).then(function (res) {
+        return res.text().then(function (text) {
+          if (!res.ok) {
+            var message = 'Could not open the transcript';
+            try {
+              var parsed = JSON.parse(text);
+              if (parsed.error) message = parsed.error;
+            } catch (error) {}
+            throw new Error(message);
+          }
+          return text;
+        });
+      }).then(function (html) {
+        if (generation !== editorGeneration) return;
+        var parsed = parseTranscriptHtml(html);
+        editorTranscriptId = parsed.transcriptId || transcriptId;
+        editorOriginal = parsed.originals || [];
+        editorHasOriginal = parsed.hasOriginal;
+        $('editor-title').textContent = file.name || parsed.title || 'Transcript';
+        renderEditorParagraphs(parsed.paragraphs);
+        var crumbs = currentBreadcrumbs.filter(function (crumb) { return !crumb.file; });
+        crumbs.push({ id: file.id || '', name: file.name || parsed.title || 'Transcript', file: true });
+        renderBreadcrumbs(crumbs);
+        $('library-view').hidden = true;
+        $('editor-view').hidden = false;
+        placeProgress();
+      }).catch(function (error) {
+        if (generation !== editorGeneration) return;
+        setJob(error.message || 'Could not open the transcript');
+      });
+    }
+
+    function setEditorStatus(message, isError) {
+      var el = $('editor-status');
+      el.textContent = message || '';
+      el.classList.toggle('is-error', Boolean(isError));
+    }
+
+    function setEditorBusy(next) {
+      editorBusy = next;
+      ['clean', 'revert', 'save', 'print'].forEach(function (id) {
+        $(id).disabled = next;
+      });
+    }
+
+    function cleanUp() {
+      if (editorBusy) return;
+      if (!editorTranscriptId) {
+        setEditorStatus('This transcript is not linked to a saved job.', true);
+        return;
+      }
+      setEditorBusy(true);
+      setEditorStatus('Cleaning up…', false);
+      fetch('/api/transcripts/' + encodeURIComponent(editorTranscriptId) + '/clean', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (!res.ok) throw new Error(data.error || 'Clean up failed');
+          return data;
+        });
+      }).then(function (data) {
+        renderEditorParagraphs(data.paragraphs || []);
+        setEditorStatus('Showing cleaned text. Save to write it to Drive.', false);
+      }).catch(function (error) {
+        setEditorStatus(error.message || 'Clean up failed', true);
+      }).finally(function () {
+        setEditorBusy(false);
+      });
+    }
+
+    function revertEditor() {
+      if (editorBusy) return;
+      if (!editorHasOriginal) {
+        setEditorStatus('Could not restore the original transcript.', true);
+        return;
+      }
+      renderEditorParagraphs(editorOriginal);
+      setEditorStatus('Restored the original transcript.', false);
+    }
+
+    function saveEditor() {
+      if (editorBusy) return;
+      if (!editorTranscriptId) {
+        setEditorStatus('This transcript is not linked to a saved job.', true);
+        return;
+      }
+      setEditorBusy(true);
+      setEditorStatus('Saving…', false);
+      fetch('/api/transcripts/' + encodeURIComponent(editorTranscriptId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paragraphs: readEditor() })
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (!res.ok) throw new Error(data.error || 'Save failed');
+          return data;
+        });
+      }).then(function () {
+        setEditorStatus('Saved to Drive.', false);
+      }).catch(function (error) {
+        setEditorStatus(error.message || 'Save failed', true);
+      }).finally(function () {
+        setEditorBusy(false);
+      });
+    }
+
+    $('clean').addEventListener('click', cleanUp);
+    $('revert').addEventListener('click', revertEditor);
+    $('save').addEventListener('click', saveEditor);
+    $('print').addEventListener('click', function () { window.print(); });
+
+    function loadTranscripts() {
+      return fetch('/api/jobs').then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok) throw new Error(body.error || 'Could not load transcripts');
+          return body.jobs || [];
+        });
+      }).then(renderTranscripts).catch(function () {});
+    }
+
+    function renderTranscripts(jobs) {
+      var list = $('transcript-list');
+      list.textContent = '';
+      if (!jobs.length) {
+        var empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = 'No transcripts yet';
+        list.appendChild(empty);
+        return;
+      }
+      jobs.forEach(function (job) {
+        var item = document.createElement('li');
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'transcript-item';
+        var name = document.createElement('span');
+        name.className = 'transcript-name';
+        name.textContent = job.name || 'Recording';
+        var status = document.createElement('span');
+        status.className = 'transcript-status';
+        status.textContent = job.status || '';
+        button.appendChild(name);
+        button.appendChild(status);
+        button.addEventListener('click', function () { openTranscriptJob(job); });
+        item.appendChild(button);
+        list.appendChild(item);
+      });
+    }
+
+    function openTranscriptJob(job) {
+      var parent = job.parentFolderId || 'root';
+      if (job.status === 'done') {
+        openFolder(parent).then(function () {
+          openEditor({
+            id: job.driveFileId,
+            name: job.name,
+            transcriptId: job.id,
+            htmlFileId: job.htmlFileId
+          });
+        });
+        return;
+      }
+      activeFileId = job.driveFileId || '';
+      if (isRunning(job.status)) {
+        if (!rememberedJob() || rememberedJob().id !== job.id) rememberJob(job.id, Date.now());
+        beginPolling(job.id, (rememberedJob() && rememberedJob().startedAt) || Date.now());
+      }
+      openFolder(parent);
     }
 
     function rememberedJob() {
@@ -216,9 +818,7 @@
     }
 
     function forgetJob() {
-      try {
-        sessionStorage.removeItem(ACTIVE_KEY);
-      } catch (error) {}
+      try { sessionStorage.removeItem(ACTIVE_KEY); } catch (error) {}
     }
 
     function stageLabel(job) {
@@ -257,7 +857,7 @@
     function renderProgress() {
       if (!progressJob) return;
       var line = progressLine(progressJob);
-      document.getElementById('progress-label').textContent = line;
+      $('progress-label').textContent = line;
       var stage = stageLabel(progressJob);
       if (stage !== progressStage) {
         progressStage = stage;
@@ -267,19 +867,19 @@
 
     function showProgress(job) {
       progressJob = job;
-      var box = document.getElementById('progress');
-      box.hidden = false;
       renderProgress();
+      placeProgress();
       if (!clockTimer) clockTimer = setInterval(renderProgress, 1000);
     }
 
     function hideProgress() {
       progressJob = null;
       progressStage = '';
-      var box = document.getElementById('progress');
-      box.hidden = true;
-      document.getElementById('progress-label').textContent = '';
-      document.querySelector('.progress-track').setAttribute('aria-valuetext', '');
+      activeFileId = '';
+      placeProgress();
+      $('progress-label').textContent = '';
+      var track = document.querySelector('.progress-track');
+      if (track) track.setAttribute('aria-valuetext', '');
       if (clockTimer) {
         clearInterval(clockTimer);
         clockTimer = null;
@@ -293,9 +893,8 @@
 
     function beginPolling(id, startedAt) {
       pollGeneration += 1;
+      if (pollTimer) clearTimeout(pollTimer);
       activeStartedAt = startedAt || Date.now();
-      document.getElementById('links').textContent = '';
-      document.getElementById('choose').disabled = true;
       setJob('');
       showProgress({ status: 'transcribing' });
       poll(id);
@@ -317,7 +916,7 @@
         var id = result.body.transcriptId;
         var status = result.body.status;
         if (typeof id !== 'string' || !id) return;
-        if (status !== 'uploading' && status !== 'transcribing' && status !== 'saving') return;
+        if (!isRunning(status)) return;
         if (rememberedJob()) return;
         rememberJob(id, Date.now());
         beginPolling(id, Date.now());
@@ -325,31 +924,44 @@
     }
 
     function finishJob(id, job) {
+      var generation = editorGeneration;
       hideProgress();
       forgetJob();
-      setJob('Transcript ready. The HTML file is next to the audio in Drive.');
-      var links = document.getElementById('links');
-      links.textContent = '';
-      var open = document.createElement('a');
-      open.href = '/t/' + encodeURIComponent(id);
-      open.textContent = 'Open transcript';
-      links.appendChild(open);
-      if (job.htmlFileId) {
-        var drive = document.createElement('a');
-        drive.href = 'https://drive.google.com/file/d/' + encodeURIComponent(job.htmlFileId) + '/view';
-        drive.textContent = 'Open in Drive';
-        drive.target = '_blank';
-        drive.rel = 'noopener';
-        links.appendChild(drive);
-      }
-      document.getElementById('choose').disabled = false;
+      followedJob = id;
+      setJob('Transcript ready.');
+      loadTranscripts();
+      openFolder(job.parentFolderId || currentFolderId).then(function () {
+        if (editorGeneration !== generation + 1) return;
+        openEditor({
+          id: job.driveFileId,
+          name: job.name,
+          transcriptId: id,
+          htmlFileId: job.htmlFileId
+        });
+      });
     }
 
     function failVisible(message) {
       hideProgress();
       forgetJob();
       setJob(message || 'Transcription failed');
-      document.getElementById('choose').disabled = false;
+      loadTranscripts();
+      openFolder(currentFolderId);
+    }
+
+    function followActiveFolder(id, job) {
+      if (!job || !job.driveFileId) return;
+      activeFileId = job.driveFileId;
+      placeProgress();
+      if (followedJob === id) return;
+      if (document.getElementById('row-' + job.driveFileId)) {
+        followedJob = id;
+        placeProgress();
+        return;
+      }
+      if (!job.parentFolderId) return;
+      followedJob = id;
+      openFolder(job.parentFolderId);
     }
 
     function startJob(fileId) {
@@ -357,17 +969,17 @@
       var generation = pollGeneration;
       if (pollTimer) clearTimeout(pollTimer);
       forgetJob();
+      followedJob = '';
+      activeFileId = fileId;
       activeStartedAt = Date.now();
-      document.getElementById('links').textContent = '';
       setJob('');
       showProgress({ status: 'uploading' });
-      document.getElementById('choose').disabled = true;
       fetch('/api/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fileId: fileId })
       }).then(function (res) {
-        return res.json().then(function (body) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
           return { ok: res.ok, body: body };
         });
       }).then(function (result) {
@@ -375,6 +987,8 @@
         if (!result.ok) throw new Error(result.body.error || 'Could not start transcription');
         rememberJob(result.body.transcriptId, activeStartedAt);
         showProgress({ status: result.body.status || 'transcribing' });
+        loadTranscripts();
+        openFolder(currentFolderId);
         poll(result.body.transcriptId);
       }).catch(function (error) {
         if (generation !== pollGeneration) return;
@@ -409,6 +1023,7 @@
         }
         setJob('');
         showProgress(job);
+        followActiveFolder(id, job);
         pollTimer = setTimeout(function () {
           if (generation !== pollGeneration) return;
           poll(id);
@@ -421,7 +1036,7 @@
         }
         setJob('');
         showProgress(progressJob || { status: 'transcribing' });
-        document.getElementById('progress-label').textContent = progressLine(progressJob) + ' · Retrying…';
+        $('progress-label').textContent = progressLine(progressJob) + ' · Retrying…';
         pollTimer = setTimeout(function () {
           if (generation !== pollGeneration) return;
           poll(id);

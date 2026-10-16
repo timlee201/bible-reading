@@ -1,8 +1,12 @@
 # Transcribe
 
-A personal web app. Sign in with Google, pick an audio or video file from Drive, and the server sends it to AssemblyAI. When the transcript is ready, the app saves an HTML file beside the audio (`Interview.mp3` becomes `Interview.html`).
+A personal web app. Sign in with Google and browse My Drive or Shared with me. Pick an audio or video file, and the server sends it to AssemblyAI. When the transcript is ready, the app saves an HTML file beside the audio (`Interview.mp3` becomes `Interview.html`) and opens it in the page.
 
-Open that HTML in a browser to read AssemblyAI’s semantic paragraphs. A toolbar (hidden when printing) can:
+The signed-in page has a sidebar (My Drive, Shared with me, and Transcripts), breadcrumbs for the open folder, and a list of folders followed by recordings. A recording is marked transcribed when its job is done or that sibling HTML file is already in the folder. Google Picker is a second way to jump to a file, including files shared with you. Transcripts in the sidebar are the jobs this app created, with the recording name and status (`uploading`, `transcribing`, `saving`, `done`, or `error`).
+
+Paragraph text in the main pane is editable. Speaker names are labels. Save writes the HTML back to Drive and leaves the original AssemblyAI paragraphs embedded, so Revert can restore them. Clean up still rewrites the visible text from those original paragraphs. Print, and the saved HTML, use `@page { size: A4; margin: 18mm 16mm; }` from `src/transcript.html`.
+
+The same HTML is also available at `/t/<transcript id>`. A toolbar (hidden when printing) can:
 
 - **Clean up** — asks this app to clean punctuation, fillers, and obvious stumbles, then swaps the visible paragraphs. Cleaned text is never the automatic default. The model output is inserted with `textContent`, not as HTML.
 - **Revert** — puts back the original AssemblyAI paragraphs from JSON embedded in the file. This stays in the browser and does not call the server.

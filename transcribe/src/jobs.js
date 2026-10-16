@@ -209,10 +209,28 @@ export function jobView(job) {
     error: job.error || null,
     htmlFileId: job.htmlFileId || null,
     name: job.driveFileName || '',
+    driveFileId: job.driveFileId || null,
+    parentFolderId: job.parentFolderId || null,
     assemblyStatus: job.assemblyStatus || null,
     audioDuration: Number.isFinite(seconds) && seconds >= 0 ? seconds : null,
     createdAt: job.createdAt || null,
   };
+}
+
+export function listJobViews(jobs) {
+  return Object.values(jobs || {})
+    .filter((job) => job && typeof job.id === 'string' && job.id)
+    .map((job) => ({
+      id: job.id,
+      name: job.driveFileName || 'Recording',
+      status: job.status || 'error',
+      driveFileId: job.driveFileId || null,
+      parentFolderId: job.parentFolderId || null,
+      htmlFileId: job.htmlFileId || null,
+      error: job.status === 'error' ? (job.error || null) : null,
+      createdAt: job.createdAt || null,
+    }))
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 }
 
 export async function submitDriveFile(drive, { fileId, refreshToken }) {
