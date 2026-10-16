@@ -22,6 +22,7 @@ import {
   latestOpenJob,
   listJobViews,
   loadJob,
+  rebuildIfInterleaved,
   renameJobsForDriveFile,
   saveVisibleParagraphs,
   submitDriveFile,
@@ -517,6 +518,8 @@ export function createApp() {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     if (job.status !== 'done') return res.status(409).json({ error: 'Transcript is not ready' });
+    const rebuilt = await rebuildIfInterleaved(drive, req.params.transcriptId);
+    if (rebuilt) return res.json({ paragraphs: rebuilt.paragraphs });
     const paragraphs = await cleanParagraphs(job.originalParagraphs || []);
     res.json({ paragraphs });
   }));
@@ -544,6 +547,13 @@ export function createApp() {
     }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
+    let rebuilt = null;
+    try {
+      rebuilt = await rebuildIfInterleaved(drive, req.params.transcriptId);
+    } catch (error) {
+      console.error('channel rebuild failed');
+    }
+    if (rebuilt) return res.send(rebuilt.html);
     if (job.htmlFileId) {
       const html = await readDriveFileText(drive, job.htmlFileId, { supportsAllDrives: true });
       return res.send(html);

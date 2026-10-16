@@ -94,28 +94,73 @@ function utteranceText(utterance) {
   return String(utterance?.text || '').replace(/\s+/g, ' ').trim();
 }
 
-function channelWords(group) {
-  return group
-    .map((utterance) => utteranceText(utterance))
-    .join(' ')
-    .toLowerCase()
-    .replace(/[^a-z0-9']+/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+function spokenWord(text) {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9']+/g, '');
 }
 
-function samePerformance(kept, candidate) {
-  const left = channelWords(kept);
-  const right = channelWords(candidate);
-  const longer = Math.max(left.length, right.length);
-  const shorter = Math.min(left.length, right.length);
-  if (!longer || shorter / longer < 0.75) return false;
-  let equal = 0;
-  for (let i = 0; i < shorter; i += 1) {
-    if (left[i] === right[i]) equal += 1;
+function timedWords(group) {
+  const words = [];
+  for (const utterance of group) {
+    const pieces = Array.isArray(utterance.words) && utterance.words.length
+      ? utterance.words
+      : [{ text: utteranceText(utterance), start: utterance.start, end: utterance.end }];
+    for (const piece of pieces) {
+      const raw = String(piece.text || '');
+      const tokens = raw.match(/[A-Za-z0-9']+/g) || [];
+      tokens.forEach((token, index) => {
+        const text = spokenWord(token);
+        if (!text) return;
+        const start = Number(piece.start);
+        const end = Number(piece.end);
+        words.push({
+          text,
+          start: Number.isFinite(start) ? start + index : index,
+          end: Number.isFinite(end) ? end : start,
+        });
+      });
+    }
   }
-  return equal / longer >= 0.75;
+  words.sort((a, b) => a.start - b.start);
+  return words;
+}
+
+// Word order drifts between channels, so compare words that were spoken at the same time.
+function samePerformance(kept, candidate) {
+  const left = timedWords(kept);
+  const right = timedWords(candidate);
+  const longer = Math.max(left.length, right.length);
+  const shorterList = left.length <= right.length ? left : right;
+  const other = shorterList === left ? right : left;
+  if (!longer || shorterList.length / longer < 0.75) return false;
+  let cursor = 0;
+  let matched = 0;
+  for (const word of shorterList) {
+    while (cursor < other.length && other[cursor].start < word.start - 700) cursor += 1;
+    for (let i = cursor; i < other.length && other[i].start <= word.start + 700; i += 1) {
+      if (other[i].text === word.text) {
+        matched += 1;
+        break;
+      }
+    }
+  }
+  return matched / longer >= 0.7;
+}
+
+export function looksInterleaved(paragraphs) {
+  const items = paragraphs || [];
+  let pairs = 0;
+  let same = 0;
+  for (let i = 1; i < items.length; i += 1) {
+    const left = items[i - 1];
+    const right = items[i];
+    const leftSpeaker = left?.speaker == null ? '' : String(left.speaker);
+    const rightSpeaker = right?.speaker == null ? '' : String(right.speaker);
+    if (!/^\d+[A-Z]$/.test(leftSpeaker) || !/^\d+[A-Z]$/.test(rightSpeaker)) continue;
+    if (leftSpeaker === rightSpeaker) continue;
+    pairs += 1;
+    if (String(left.text || '').trim().toLowerCase() === String(right.text || '').trim().toLowerCase()) same += 1;
+  }
+  return pairs >= 4 && same / pairs >= 0.5;
 }
 
 function displaySpeaker(utterance, onlyChannel) {

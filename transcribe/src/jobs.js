@@ -4,6 +4,7 @@ import {
   getParagraphs,
   getTranscript,
   isSparseTranscript,
+  looksInterleaved,
   paragraphsFromUtterances,
   resolveWebhookUrl,
   uploadAudioStream,
@@ -371,4 +372,25 @@ export async function renameJobsForDriveFile(drive, driveFileId, name) {
 export async function loadJob(drive, transcriptId) {
   const state = await loadState(drive);
   return { state, job: findJob(state, transcriptId).job };
+}
+
+export async function rebuildIfInterleaved(drive, transcriptId) {
+  return withLock(transcriptId, async () => {
+    const state = await loadState(drive);
+    const found = findJob(state, transcriptId);
+    const job = found.job;
+    if (!job?.followupTranscriptId || !looksInterleaved(job.originalParagraphs)) return null;
+    const remote = await getTranscript(job.followupTranscriptId);
+    const paragraphs = paragraphsFromUtterances(remote.utterances);
+    if (!paragraphs.length || paragraphs.length >= job.originalParagraphs.length) {
+      throw new Error('Could not combine the two channels');
+    }
+    job.originalParagraphs = paragraphs;
+    const html = renderJobHtml(job, paragraphs);
+    job.htmlFileId = await writeHtml(drive, job, html);
+    job.status = 'done';
+    job.error = null;
+    await saveState(drive, state);
+    return { html, paragraphs };
+  });
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isSparseTranscript, paragraphsFromUtterances, transcriptBody } from './assemblyai.js';
+import { isSparseTranscript, looksInterleaved, paragraphsFromUtterances, transcriptBody } from './assemblyai.js';
 import { findJob, jobView, latestOpenJob, listJobViews } from './jobs.js';
 import { normalizeStoredJob } from './state.js';
 import {
@@ -221,6 +221,46 @@ test('a pause starts a new paragraph for the same speaker', () => {
     { speaker: 'A', text: 'Three things in the first three hours' },
     { speaker: 'A', text: 'He forgave people' },
   ]);
+});
+
+test('channels still collapse when one side hears an extra word', () => {
+  const word = (channel, speaker, text, start) => ({
+    channel,
+    speaker,
+    start,
+    end: start + 180,
+    text,
+    words: [{ text, start, end: start + 180 }],
+  });
+  const paragraphs = paragraphsFromUtterances([
+    word(1, '1A', 'Please', 0),
+    word(1, '1A', 'turn', 200),
+    word(1, '1A', 'to', 400),
+    word(1, '1A', 'the', 600),
+    word(2, '2A', 'Please', 10),
+    word(2, '2A', 'extra', 190),
+    word(2, '2A', 'turn', 220),
+    word(2, '2A', 'to', 410),
+    word(2, '2A', 'the', 610),
+  ]);
+  assert.deepEqual(paragraphs, [
+    { speaker: 'A', text: 'Please turn to the' },
+  ]);
+});
+
+test('interleaved channel labels are the duplicated stereo pass', () => {
+  assert.equal(looksInterleaved([
+    { speaker: '1A', text: 'Please' },
+    { speaker: '2A', text: 'Please' },
+    { speaker: '1A', text: 'turn' },
+    { speaker: '2A', text: 'turn' },
+    { speaker: '1A', text: 'to' },
+    { speaker: '2A', text: 'to' },
+  ]), true);
+  assert.equal(looksInterleaved([
+    { speaker: 'A', text: 'Please turn to the first outline.' },
+    { speaker: 'B', text: 'That is the second point.' },
+  ]), false);
 });
 
 test('distinct channels stay in time order', () => {
