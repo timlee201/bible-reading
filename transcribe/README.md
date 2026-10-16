@@ -108,6 +108,18 @@ printf '%s' 'VALUE' | gcloud secrets create webhook-secret --data-file=-
 
 Use `gcloud secrets versions add` to rotate a secret that already exists.
 
+## Vercel
+
+Host this app as its own Vercel project. The project’s root directory is `transcribe/`, not the repository root, so the reading schedule at the root of the repo stays where it is.
+
+1. In Vercel, create a new project from this GitHub repo.
+2. Set **Root Directory** to `transcribe`.
+3. Add the environment variables from `.env.example`, using the same names. Leave `WEBHOOK_URL` empty so each transcript uses the sealed webhook URL (`APP_ORIGIN/api/webhooks/assemblyai/<sealed token>`). `PORT` is unused on Vercel.
+4. Deploy. `vercel.json` sends every request to `api/index.js`, which exports the Express app from `createApp()`. `npm start` is unchanged and still listens locally. The function `maxDuration` is 300 seconds because `POST /api/jobs` downloads the Drive file and uploads it to AssemblyAI before it responds. A plan that allows a 300 second function is required.
+5. Set `APP_ORIGIN` to the deployment origin with no trailing slash, for example `https://your-project.vercel.app`, and redeploy so the cookie, OAuth redirect, and webhook use that origin.
+6. On the existing Google OAuth web client, add that origin as an authorized JavaScript origin and add `APP_ORIGIN/auth/callback` as an authorized redirect URI.
+7. Add the same origin to the Picker API key’s website restrictions.
+
 ## Cloud Run
 
 The Dockerfile in this directory uses Node.js 22. Build context is `transcribe/` (this folder), not the repository root. The container listens on 8080.

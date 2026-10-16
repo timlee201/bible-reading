@@ -1,6 +1,16 @@
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const templateUrl = new URL('./transcript.html', import.meta.url);
+function transcriptTemplatePath() {
+  const besideModule = fileURLToPath(new URL('./transcript.html', import.meta.url));
+  const candidates = [
+    besideModule,
+    path.join(process.cwd(), 'src', 'transcript.html'),
+    path.join(process.cwd(), 'transcript.html'),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || besideModule;
+}
 
 export function escapeHtml(value) {
   return String(value)
@@ -59,7 +69,7 @@ export function renderTranscript({
   transcriptId,
   fileToken,
 }) {
-  const template = fs.readFileSync(templateUrl, 'utf8');
+  const template = fs.readFileSync(transcriptTemplatePath(), 'utf8');
   const replacements = new Map([
     ['__TITLE__', escapeHtml(title ?? '')],
     ['__BODY__', renderParagraphs(paragraphs)],

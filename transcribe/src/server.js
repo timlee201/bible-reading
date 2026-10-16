@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { cleanParagraphs, getTranscript } from './assemblyai.js';
@@ -31,6 +31,24 @@ import { loadState, saveState } from './state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
+
+function firstExisting(candidates) {
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+function publicIndexPath() {
+  const found = firstExisting([
+    path.join(__dirname, 'public', 'index.html'),
+    path.join(process.cwd(), 'src', 'public', 'index.html'),
+    path.join(process.cwd(), 'public', 'index.html'),
+  ]);
+  if (!found) {
+    const error = new Error('Picker page was not found');
+    error.status = 500;
+    throw error;
+  }
+  return found;
+}
 
 function appOrigin() {
   return (process.env.APP_ORIGIN || '').trim().replace(/\/$/, '');
@@ -250,7 +268,7 @@ export function createApp() {
 
   app.get('/', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(publicIndexPath());
   });
 
   app.get('/favicon.ico', (req, res) => {
