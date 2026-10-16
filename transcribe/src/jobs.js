@@ -1,12 +1,20 @@
 import crypto from 'node:crypto';
-import { createTranscript, getParagraphs, getTranscript, resolveWebhookUrl, uploadAudioStream } from './assemblyai.js';
+import {
+  createTranscript,
+  getParagraphs,
+  getTranscript,
+  isSparseTranscript,
+  paragraphsFromUtterances,
+  resolveWebhookUrl,
+  uploadAudioStream,
+} from './assemblyai.js';
 import { createHtmlFile, getDriveFile, openDriveDownload, updateHtmlFile } from './google.js';
 import { htmlFileName, renderTranscript } from './render.js';
-import { createFileToken } from './seal.js';
+import { createFileToken, refreshTokenFromFileToken } from './seal.js';
 import { loadState, saveState } from './state.js';
 
 const chains = new Map();
-const materializing = new Set();
+const materializeRuns = new Map();
 
 function withLock(key, fn) {
   const prev = chains.get(key) || Promise.resolve();
@@ -88,9 +96,12 @@ export async function commitTranscriptJob(drive, localId, transcriptId) {
 }
 
 export async function failJob(drive, id, message) {
-  return withLock(id, async () => {
+  const peeked = await loadState(drive);
+  const found = findJob(peeked, id);
+  const key = found.key || id;
+  return withLock(key, async () => {
     const state = await loadState(drive);
-    const job = state.jobs[id];
+    const job = state.jobs[key];
     if (!job) return null;
     if (job.status === 'done' || job.htmlFileId) return job;
     job.status = 'error';
@@ -100,6 +111,16 @@ export async function failJob(drive, id, message) {
   });
 }
 
+async function paragraphsForCompletedJob(job) {
+  const transcriptId = job.followupTranscriptId || job.id;
+  if (job.followupTranscriptId) {
+    const remote = await getTranscript(transcriptId);
+    const collapsed = paragraphsFromUtterances(remote.utterances);
+    if (collapsed.length) return collapsed;
+  }
+  return getParagraphs(transcriptId);
+}
+
 async function materialize(drive, state, job) {
   if (!job.parentFolderId) {
     job.status = 'error';
@@ -107,7 +128,7 @@ async function materialize(drive, state, job) {
     await saveState(drive, state);
     return job;
   }
-  const paragraphs = await getParagraphs(job.id);
+  const paragraphs = await paragraphsForCompletedJob(job);
   job.originalParagraphs = paragraphs;
   const html = renderJobHtml(job, paragraphs);
   job.htmlFileId = await writeHtml(drive, job, html);
@@ -126,10 +147,42 @@ function rememberTranscriptFacts(job, remote) {
   if (Number.isFinite(seconds) && seconds >= 0) job.audioDuration = seconds;
 }
 
+export function findJob(state, transcriptId) {
+  const jobs = state?.jobs || {};
+  if (jobs[transcriptId]) return { key: transcriptId, job: jobs[transcriptId] };
+  for (const [key, job] of Object.entries(jobs)) {
+    if (job && job.followupTranscriptId === transcriptId) return { key, job };
+  }
+  return { key: null, job: null };
+}
+
+function refreshForJob(state, job) {
+  try {
+    if (job.fileToken) return refreshTokenFromFileToken(job.fileToken);
+  } catch {
+    // A rotated session secret leaves the file token unreadable.
+  }
+  return state.refreshToken || '';
+}
+
+async function maybeRetrySparse(drive, state, job, remote) {
+  if (job.followupTranscriptId || !isSparseTranscript(remote) || !remote.audio_url) return false;
+  const next = await createTranscript(remote.audio_url, resolveWebhookUrl(refreshForJob(state, job)), {
+    multichannel: true,
+  });
+  if (!next?.id) return false;
+  job.followupTranscriptId = next.id;
+  job.status = 'transcribing';
+  job.error = null;
+  job.assemblyStatus = next.status || 'queued';
+  await saveState(drive, state);
+  return true;
+}
+
 function ensureMaterialize(drive, transcriptId) {
-  if (materializing.has(transcriptId)) return;
-  materializing.add(transcriptId);
-  withLock(transcriptId, async () => {
+  const existing = materializeRuns.get(transcriptId);
+  if (existing) return existing;
+  const run = withLock(transcriptId, async () => {
     const state = await loadState(drive);
     const job = state.jobs[transcriptId];
     if (!job || job.htmlFileId || job.status === 'done' || job.status === 'error') return job;
@@ -140,15 +193,17 @@ function ensureMaterialize(drive, transcriptId) {
     console.error('transcript save failed');
     return failJob(drive, transcriptId, message);
   }).finally(() => {
-    materializing.delete(transcriptId);
+    materializeRuns.delete(transcriptId);
   });
+  materializeRuns.set(transcriptId, run);
+  return run;
 }
 
-export async function syncJob(drive, transcriptId, { assumeCompleted = false } = {}) {
+async function syncCanonical(drive, key, requestedId, assumeCompleted) {
   let materializeAfter = false;
-  const job = await withLock(transcriptId, async () => {
+  const job = await withLock(key, async () => {
     const state = await loadState(drive);
-    const job = state.jobs[transcriptId];
+    const job = state.jobs[key];
     if (!job) return null;
     if (job.htmlFileId) {
       if (job.status !== 'done') {
@@ -160,18 +215,23 @@ export async function syncJob(drive, transcriptId, { assumeCompleted = false } =
     }
     if (!assumeCompleted && job.status === 'error') return job;
     if (job.status === 'uploading') return job;
-
-    if (assumeCompleted) {
-      job.status = 'saving';
-      return materialize(drive, state, job);
-    }
-
     if (job.status === 'saving') {
       materializeAfter = true;
       return job;
     }
 
-    const remote = await getTranscript(transcriptId);
+    const activeId = job.followupTranscriptId || job.id;
+    const treatAsCompleted = assumeCompleted && requestedId === activeId;
+    let remote;
+    try {
+      remote = await getTranscript(activeId);
+    } catch (error) {
+      if (!treatAsCompleted || job.followupTranscriptId) throw error;
+      job.status = 'saving';
+      await saveState(drive, state);
+      materializeAfter = true;
+      return job;
+    }
     rememberTranscriptFacts(job, remote);
     if (remote.status === 'error') {
       job.status = 'error';
@@ -180,14 +240,28 @@ export async function syncJob(drive, transcriptId, { assumeCompleted = false } =
       return job;
     }
     if (remote.status !== 'completed') return job;
-
+    try {
+      if (await maybeRetrySparse(drive, state, job, remote)) return job;
+    } catch (error) {
+      console.error('channel retry failed');
+    }
     job.status = 'saving';
     await saveState(drive, state);
     materializeAfter = true;
     return job;
   });
-  if (materializeAfter && job) ensureMaterialize(drive, transcriptId);
+  if (materializeAfter && job) {
+    const saving = ensureMaterialize(drive, key);
+    if (assumeCompleted) await saving;
+  }
   return job;
+}
+
+export async function syncJob(drive, transcriptId, { assumeCompleted = false } = {}) {
+  const peeked = await loadState(drive);
+  const found = findJob(peeked, transcriptId);
+  if (!found.job) return null;
+  return syncCanonical(drive, found.key, transcriptId, assumeCompleted);
 }
 
 const RESUMABLE = new Set(['uploading', 'transcribing', 'saving']);
@@ -296,5 +370,5 @@ export async function renameJobsForDriveFile(drive, driveFileId, name) {
 
 export async function loadJob(drive, transcriptId) {
   const state = await loadState(drive);
-  return { state, job: state.jobs[transcriptId] || null };
+  return { state, job: findJob(state, transcriptId).job };
 }

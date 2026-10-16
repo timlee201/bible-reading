@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { jobView, latestOpenJob, listJobViews } from './jobs.js';
+import { isSparseTranscript, paragraphsFromUtterances, transcriptBody } from './assemblyai.js';
+import { findJob, jobView, latestOpenJob, listJobViews } from './jobs.js';
+import { normalizeStoredJob } from './state.js';
 import {
   appendFileCrumb,
   breadcrumbsFor,
@@ -164,4 +166,93 @@ test('job view leaves progress fields empty when the transcript has not been loa
   assert.equal(view.audioDuration, null);
   assert.equal(view.error, null);
   assert.equal(view.htmlFileId, null);
+});
+
+test('a long transcript with only a handful of words is sparse', () => {
+  assert.equal(isSparseTranscript({
+    audio_duration: 4471,
+    words: [{}, {}, {}, {}, {}],
+    multichannel: false,
+  }), true);
+  assert.equal(isSparseTranscript({
+    audio_duration: 3518,
+    words: Array.from({ length: 6706 }, () => ({})),
+  }), false);
+  assert.equal(isSparseTranscript({ audio_duration: 30, words: [] }), false);
+  assert.equal(isSparseTranscript({
+    audio_duration: 4000,
+    words: [],
+    multichannel: true,
+  }), false);
+});
+
+test('duplicate stereo channels collapse to one speaker', () => {
+  const paragraphs = paragraphsFromUtterances([
+    { channel: 1, speaker: '1A', start: 0, text: 'And if they are really a help' },
+    { channel: 2, speaker: '2A', start: 10, text: 'And if they are really a help' },
+    { channel: 1, speaker: '1B', start: 4000, text: 'We spend two sessions' },
+    { channel: 2, speaker: '2B', start: 4010, text: 'We spend two sessions' },
+  ]);
+  assert.deepEqual(paragraphs, [
+    { speaker: 'A', text: 'And if they are really a help' },
+    { speaker: 'B', text: 'We spend two sessions' },
+  ]);
+});
+
+test('channels collapse when the words match but the breaks do not', () => {
+  const paragraphs = paragraphsFromUtterances([
+    { channel: 1, speaker: '1A', start: 0, end: 200, text: 'And if' },
+    { channel: 1, speaker: '1A', start: 200, end: 700, text: 'they are really a help' },
+    { channel: 2, speaker: '2A', start: 0, end: 400, text: 'And if they are' },
+    { channel: 2, speaker: '2A', start: 400, end: 700, text: 'really a help' },
+  ]);
+  assert.deepEqual(paragraphs, [
+    { speaker: 'A', text: 'And if they are really a help' },
+  ]);
+});
+
+test('a pause starts a new paragraph for the same speaker', () => {
+  const paragraphs = paragraphsFromUtterances([
+    { channel: 1, speaker: '1A', start: 0, end: 400, text: 'Three things' },
+    { channel: 1, speaker: '1A', start: 500, end: 900, text: 'in the first three hours' },
+    { channel: 1, speaker: '1A', start: 4000, end: 4600, text: 'He forgave people' },
+  ]);
+  assert.deepEqual(paragraphs, [
+    { speaker: 'A', text: 'Three things in the first three hours' },
+    { speaker: 'A', text: 'He forgave people' },
+  ]);
+});
+
+test('distinct channels stay in time order', () => {
+  const paragraphs = paragraphsFromUtterances([
+    { channel: 2, speaker: '2A', start: 1500, text: 'The budget needs another look today' },
+    { channel: 1, speaker: '1A', start: 0, text: 'Good morning everyone and welcome' },
+  ]);
+  assert.deepEqual(paragraphs, [
+    { speaker: '1A', text: 'Good morning everyone and welcome' },
+    { speaker: '2A', text: 'The budget needs another look today' },
+  ]);
+});
+
+test('a channel retry asks AssemblyAI to transcribe each channel', () => {
+  const plain = transcriptBody('https://cdn.example/audio', null);
+  assert.equal(plain.speaker_labels, true);
+  assert.equal(plain.multichannel, undefined);
+  const retry = transcriptBody('https://cdn.example/audio', 'https://app.example/hook', { multichannel: true });
+  assert.equal(retry.multichannel, true);
+  assert.equal(retry.webhook_url, 'https://app.example/hook');
+  assert.equal(retry.speaker_labels, true);
+});
+
+test('the followup transcript id is stored and still finds the original job', () => {
+  const stored = normalizeStoredJob('mono-id', {
+    id: 'mono-id',
+    status: 'transcribing',
+    followupTranscriptId: 'channel-id',
+    driveFileName: 'Session 4.mp3',
+  });
+  assert.equal(stored.followupTranscriptId, 'channel-id');
+  const found = findJob({ jobs: { 'mono-id': stored } }, 'channel-id');
+  assert.equal(found.key, 'mono-id');
+  assert.equal(found.job.driveFileName, 'Session 4.mp3');
 });

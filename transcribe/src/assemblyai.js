@@ -64,16 +64,114 @@ export async function uploadAudioStream(nodeStream) {
   return data.upload_url;
 }
 
-export async function createTranscript(audioUrl, webhookUrl) {
+export function transcriptBody(audioUrl, webhookUrl, options = {}) {
   const body = {
     audio_url: audioUrl,
     speaker_labels: true,
   };
+  if (options.multichannel) body.multichannel = true;
   if (webhookUrl) {
     body.webhook_url = webhookUrl;
     body.webhook_auth_header_name = 'X-Webhook-Secret';
     body.webhook_auth_header_value = process.env.WEBHOOK_SECRET;
   }
+  return body;
+}
+
+// A long recording that comes back as a handful of words is usually a stereo
+// file whose channels cancel in the default mono mix. Those need a per-channel pass.
+export function isSparseTranscript(remote) {
+  if (!remote || remote.multichannel) return false;
+  const seconds = Number(remote.audio_duration);
+  if (!Number.isFinite(seconds) || seconds < 120) return false;
+  const words = Array.isArray(remote.words)
+    ? remote.words.length
+    : String(remote.text || '').trim().split(/\s+/).filter(Boolean).length;
+  return words / (seconds / 60) < 2;
+}
+
+function utteranceText(utterance) {
+  return String(utterance?.text || '').replace(/\s+/g, ' ').trim();
+}
+
+function channelWords(group) {
+  return group
+    .map((utterance) => utteranceText(utterance))
+    .join(' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9']+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function samePerformance(kept, candidate) {
+  const left = channelWords(kept);
+  const right = channelWords(candidate);
+  const longer = Math.max(left.length, right.length);
+  const shorter = Math.min(left.length, right.length);
+  if (!longer || shorter / longer < 0.75) return false;
+  let equal = 0;
+  for (let i = 0; i < shorter; i += 1) {
+    if (left[i] === right[i]) equal += 1;
+  }
+  return equal / longer >= 0.75;
+}
+
+function displaySpeaker(utterance, onlyChannel) {
+  const speaker = utterance?.speaker == null ? '' : String(utterance.speaker);
+  const channel = utterance?.channel == null ? '' : String(utterance.channel);
+  if (!onlyChannel) return speaker;
+  if (channel && speaker.startsWith(channel)) {
+    const rest = speaker.slice(channel.length);
+    if (/^[A-Z]$/.test(rest)) return rest;
+  }
+  if (speaker === channel) return 'A';
+  return speaker;
+}
+
+export function paragraphsFromUtterances(utterances) {
+  const items = (utterances || []).filter((utterance) => utteranceText(utterance));
+  const byChannel = new Map();
+  for (const utterance of items) {
+    const channel = utterance.channel == null ? '' : String(utterance.channel);
+    if (!byChannel.has(channel)) byChannel.set(channel, []);
+    byChannel.get(channel).push(utterance);
+  }
+  const keptChannels = [];
+  for (const [channel, group] of byChannel) {
+    const duplicate = keptChannels.some((kept) => samePerformance(byChannel.get(kept), group));
+    if (!duplicate) keptChannels.push(channel);
+  }
+  const onlyChannel = keptChannels.length === 1;
+  const chosen = items
+    .filter((utterance) => keptChannels.includes(utterance.channel == null ? '' : String(utterance.channel)))
+    .sort((a, b) => (a.start || 0) - (b.start || 0) || String(a.channel).localeCompare(String(b.channel)));
+  const paragraphs = [];
+  for (const utterance of chosen) {
+    const speaker = displaySpeaker(utterance, onlyChannel);
+    const text = utteranceText(utterance);
+    const previous = paragraphs[paragraphs.length - 1];
+    const gap = previous ? (utterance.start || 0) - (previous.end || 0) : 0;
+    const longSentence = previous
+      && previous.text.split(/\s+/).filter(Boolean).length >= 45
+      && /[.!?]["']?$/.test(previous.text);
+    if (previous && previous.speaker === speaker && gap < 1600 && !longSentence) {
+      previous.text = `${previous.text} ${text}`.trim();
+      previous.end = utterance.end || utterance.start || previous.end;
+    } else {
+      paragraphs.push({
+        speaker,
+        text,
+        end: utterance.end || utterance.start || 0,
+      });
+    }
+  }
+  return paragraphs.map((paragraph) => ({ speaker: paragraph.speaker, text: paragraph.text }));
+}
+
+export async function createTranscript(audioUrl, webhookUrl, options = {}) {
+  const body = transcriptBody(audioUrl, webhookUrl, options);
   const res = await fetch(`${API}/transcript`, {
     method: 'POST',
     headers: authHeaders({ 'content-type': 'application/json' }),

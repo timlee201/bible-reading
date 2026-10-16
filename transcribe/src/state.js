@@ -35,7 +35,14 @@ function normalizeJob(id, job) {
     createdAt: job.createdAt,
     assemblyStatus: knownAssemblyStatus(job.assemblyStatus),
     audioDuration: knownAudioDuration(job.audioDuration),
+    followupTranscriptId: typeof job.followupTranscriptId === 'string' && job.followupTranscriptId
+      ? job.followupTranscriptId
+      : null,
   };
+}
+
+export function normalizeStoredJob(id, job) {
+  return normalizeJob(id, job || {});
 }
 
 export async function loadState(drive) {
