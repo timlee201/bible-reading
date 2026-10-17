@@ -384,13 +384,12 @@ export async function loadJob(drive, transcriptId) {
   return { state, job: findJob(state, transcriptId).job };
 }
 
-async function storeParagraphTimes(drive, state, job) {
-  if (paragraphsHaveTimes(job.originalParagraphs)) return false;
-  const timed = await paragraphsForCompletedJob(job);
-  if (!paragraphsHaveTimes(timed)) return false;
-  const aligned = paragraphsForCatalog(job.originalParagraphs, timed);
-  job.originalParagraphs = aligned;
-  const html = renderJobHtml(job, aligned);
+async function storeParagraphTimes(drive, state, job, timed) {
+  const saved = job.originalParagraphs || [];
+  if (paragraphsHaveTimes(saved) || !paragraphsHaveTimes(timed)) return false;
+  if (saved.length !== timed.length) return false;
+  job.originalParagraphs = paragraphsForCatalog(saved, timed);
+  const html = renderJobHtml(job, job.originalParagraphs);
   job.htmlFileId = await writeHtml(drive, job, html);
   job.status = 'done';
   job.error = null;
@@ -402,8 +401,9 @@ export async function ensureParagraphTimes(drive, transcriptId) {
   return withLock(`times:${transcriptId}`, async () => {
     const state = await loadState(drive);
     const job = findJob(state, transcriptId).job;
-    if (!job || job.status !== 'done') return null;
-    const wrote = await storeParagraphTimes(drive, state, job);
+    if (!job || job.status !== 'done' || paragraphsHaveTimes(job.originalParagraphs)) return null;
+    const timed = await paragraphsForCompletedJob(job);
+    const wrote = await storeParagraphTimes(drive, state, job, timed);
     if (!wrote) return null;
     return { html: renderJobHtml(job, job.originalParagraphs), paragraphs: job.originalParagraphs };
   });
@@ -424,10 +424,13 @@ export async function publishJob(drive, transcriptId, visible) {
       error.status = 409;
       throw error;
     }
-    await storeParagraphTimes(drive, state, job);
+    const timed = paragraphsHaveTimes(job.originalParagraphs)
+      ? job.originalParagraphs
+      : await paragraphsForCompletedJob(job);
+    await storeParagraphTimes(drive, state, job, timed);
     const paragraphs = paragraphsForCatalog(
       Array.isArray(visible) && visible.length ? visible : job.originalParagraphs,
-      job.originalParagraphs,
+      timed,
     );
     const shared = await shareFileWithAnyone(drive, job.driveFileId);
     const named = sessionOrder(job.driveFileName);
