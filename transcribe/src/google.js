@@ -218,6 +218,29 @@ export async function breadcrumbChain(drive, folderId) {
   return { rootId, chain };
 }
 
+export async function fetchDriveMedia({ refreshToken, accessToken, expiry } = {}, fileId, range) {
+  const auth = oauthClient();
+  auth.setCredentials({
+    refresh_token: refreshToken || undefined,
+    access_token: accessToken || undefined,
+    expiry_date: expiry || undefined,
+  });
+  const headerBag = await auth.getRequestHeaders();
+  const headers = {};
+  if (headerBag && typeof headerBag.forEach === 'function') {
+    headerBag.forEach((value, key) => {
+      headers[key] = value;
+    });
+  } else if (headerBag && typeof headerBag === 'object') {
+    Object.assign(headers, headerBag);
+  }
+  if (range) headers.Range = range;
+  return fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
+    { headers },
+  );
+}
+
 export async function readDriveFileText(drive, fileId, { supportsAllDrives = false } = {}) {
   const params = { fileId, alt: 'media' };
   if (supportsAllDrives) params.supportsAllDrives = true;

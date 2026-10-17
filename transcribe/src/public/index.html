@@ -1457,8 +1457,8 @@
     }
 
     function driveMediaUrl(fileId) {
-      if (!fileId || !session || !session.accessToken) return '';
-      return 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId) + '?alt=media&access_token=' + encodeURIComponent(session.accessToken);
+      if (!fileId) return '';
+      return '/api/drive/media/' + encodeURIComponent(fileId);
     }
 
     function mediaIsVideo(hint) {

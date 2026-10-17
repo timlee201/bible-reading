@@ -9,12 +9,12 @@ import {
   SERIES_TITLE,
   findPublishedSession,
   publicCatalog,
-  publicMediaUrl,
 } from './catalog.js';
 import {
   breadcrumbChain,
   createDrive,
   exchangeCode,
+  fetchDriveMedia,
   getAuthUrl,
   getDriveFile,
   listDriveChildren,
@@ -289,6 +289,34 @@ function sendApp(res) {
   res.sendFile(publicIndexPath());
 }
 
+async function pipeDriveMedia(res, tokens, fileId, range) {
+  const upstream = await fetchDriveMedia(tokens, fileId, range);
+  res.status(upstream.status);
+  for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+    const value = upstream.headers.get(name);
+    if (value) res.setHeader(name, value);
+  }
+  if (!res.getHeader('accept-ranges')) res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Cache-Control', 'private, no-store');
+  if (!upstream.ok && upstream.status !== 206) {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return res.end();
+  }
+  if (!upstream.body) return res.end();
+  const reader = upstream.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!res.write(Buffer.from(value))) {
+        await new Promise((resolve) => res.once('drain', resolve));
+      }
+    }
+  } finally {
+    res.end();
+  }
+}
+
 async function ownerDrive() {
   const refreshToken = fallbackRefreshToken();
   if (!refreshToken) {
@@ -415,9 +443,31 @@ export function createApp() {
       order: session.order,
       series: { id: SERIES_ID, title: SERIES_TITLE },
       mimeType: session.mimeType || '',
-      mediaUrl: publicMediaUrl(session.driveFileId),
+      mediaUrl: `/api/sessions/${session.id}/media`,
       paragraphs: session.paragraphs,
     });
+  }));
+
+  app.get('/api/sessions/:sessionId/media', asyncHandler(async (req, res) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.sessionId)) return res.status(404).end();
+    const refreshToken = fallbackRefreshToken();
+    if (!refreshToken) return res.status(503).end();
+    const drive = createDrive({ refreshToken });
+    const state = await loadState(drive);
+    const session = findPublishedSession(state.catalog, req.params.sessionId);
+    if (!session) return res.status(404).end();
+    const tokens = await refreshAccessToken(refreshToken);
+    await pipeDriveMedia(res, tokens, session.driveFileId, req.headers.range);
+  }));
+
+  app.get('/api/drive/media/:fileId', requireSession, asyncHandler(async (req, res) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.fileId)) return res.status(400).end();
+    const tokens = await refreshAccessToken(req.sessionUser.refreshToken);
+    await pipeDriveMedia(res, {
+      refreshToken: tokens.refreshToken,
+      accessToken: tokens.accessToken,
+      expiry: tokens.expiry,
+    }, req.params.fileId, req.headers.range);
   }));
 
   app.get('/api/session', requireSession, (req, res) => {
