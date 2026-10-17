@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { isSparseTranscript, looksInterleaved, paragraphsFromUtterances, transcriptBody, withOriginalTimes } from './assemblyai.js';
-import { paragraphIndexAt, publicCatalog, sessionOrder, upsertPublishedSession } from './catalog.js';
+import { paragraphIndexAt, publicCatalog, sessionOrder, sessionTitle, upsertPublishedSession } from './catalog.js';
 import { findJob, jobView, latestOpenJob, listJobViews } from './jobs.js';
 import { normalizeStoredJob } from './state.js';
 import {
@@ -283,6 +283,8 @@ test('clean up copies times from the original paragraph', () => {
 });
 
 test('a session number becomes the series order', () => {
+  assert.equal(sessionTitle('2015. TT. Session 2.mp3'), '2015. TT. Session 2');
+  assert.equal(sessionTitle('2015. TT. Session 2'), '2015. TT. Session 2');
   assert.equal(sessionOrder('2015. TT. Session 2.mp3'), 2);
   assert.equal(sessionOrder('Interview.mp3'), null);
   const catalog = upsertPublishedSession(null, {

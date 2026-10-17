@@ -1,13 +1,13 @@
 export const SERIES_ID = 'teachers-training';
 export const SERIES_TITLE = "Teacher's Training";
 
+const TITLE_EXTENSION = /\.(mp3|mp4|m4a|wav|webm|ogg|flac|aac|mpeg|mpg|mov|mkv|avi|wmv|html)$/i;
+
 export function sessionTitle(name) {
   const trimmed = String(name || '').trim();
   const slash = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
   const base = (slash >= 0 ? trimmed.slice(slash + 1) : trimmed) || 'Session';
-  const dot = base.lastIndexOf('.');
-  const stem = dot > 0 ? base.slice(0, dot) : base;
-  return stem || 'Session';
+  return base.replace(TITLE_EXTENSION, '') || 'Session';
 }
 
 export function sessionOrder(name) {
