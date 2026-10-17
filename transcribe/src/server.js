@@ -284,8 +284,10 @@ function normalizeParagraphs(input) {
   });
 }
 
-function sendApp(res) {
-  res.setHeader('Cache-Control', 'no-store');
+const PUBLIC_CACHE = 'public, max-age=60, stale-while-revalidate=86400';
+
+function sendApp(res, cache) {
+  res.setHeader('Cache-Control', cache ? PUBLIC_CACHE : 'no-store');
   res.sendFile(publicIndexPath());
 }
 
@@ -348,25 +350,25 @@ export function createApp() {
   app.use(express.json({ limit: '8mb' }));
 
   app.get('/', (req, res) => {
-    sendApp(res);
+    sendApp(res, true);
   });
 
   app.get('/series/:seriesId', (req, res) => {
     if (req.params.seriesId !== SERIES_ID) {
       return res.status(404).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Not found</title><p>That series was not found.</p>');
     }
-    sendApp(res);
+    sendApp(res, true);
   });
 
   app.get('/sessions/:sessionId', (req, res) => {
     if (!/^[a-zA-Z0-9_-]+$/.test(req.params.sessionId)) {
       return res.status(404).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Not found</title><p>That session was not found.</p>');
     }
-    sendApp(res);
+    sendApp(res, true);
   });
 
   app.get('/library', requireSession, (req, res) => {
-    sendApp(res);
+    sendApp(res, false);
   });
 
   app.get('/favicon.ico', (req, res) => {
@@ -424,7 +426,7 @@ export function createApp() {
   app.get('/api/catalog', asyncHandler(async (req, res) => {
     const drive = await ownerDrive();
     const state = await loadState(drive);
-    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Cache-Control', PUBLIC_CACHE);
     res.json(publicCatalog(state.catalog));
   }));
 
@@ -436,7 +438,7 @@ export function createApp() {
     const state = await loadState(drive);
     const session = findPublishedSession(state.catalog, req.params.sessionId);
     if (!session) return res.status(404).json({ error: 'Not found' });
-    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Cache-Control', PUBLIC_CACHE);
     res.json({
       id: session.id,
       title: session.title,

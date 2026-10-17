@@ -143,7 +143,12 @@ test('signed-in page includes the library sidebar and editor', () => {
   assert.match(page, /Teacher's Training/);
   assert.match(page, /\/series\//);
   assert.match(page, /\/sessions\//);
+  assert.match(page, /history\.pushState/);
+  assert.match(page, /popstate/);
   assert.doesNotMatch(page, /innerHTML/);
+  const server = fs.readFileSync(new URL('./server.js', import.meta.url), 'utf8');
+  assert.match(server, /public, max-age=60, stale-while-revalidate=86400/);
+  assert.match(server, /private, no-store/);
 });
 
 test('original JSON is embedded and is not the visible cleanup', () => {

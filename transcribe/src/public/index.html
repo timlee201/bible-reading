@@ -430,6 +430,10 @@
     var editorBusy = false;
     var activeMedia = null;
     var readingRoot = null;
+    var libraryStarted = false;
+    var publicRequest = 0;
+    var folderMemory = {};
+    var pageMemory = { catalog: null, sessions: {} };
     var ACTIVE_KEY = 'transcribeActiveJob';
 
     function $(id) { return document.getElementById(id); }
@@ -438,36 +442,68 @@
       document.documentElement.setAttribute('data-route', 'signed-out');
     }
 
-    function showSignedIn() {
+    function showLibraryRoute() {
       document.documentElement.setAttribute('data-route', 'library');
+      if (!session) {
+        window.location.assign('/library');
+        return;
+      }
       $('who').textContent = session.email;
-      openFolder('root');
-      loadTranscripts();
-      resumeJob();
+      if (!libraryStarted) {
+        libraryStarted = true;
+        if (window.gapi) gapi.load('picker', function () {});
+        openFolder(currentFolderId || 'root');
+        loadTranscripts();
+        resumeJob();
+        return;
+      }
+      if (!$('editor-view').hidden && editorDriveFileId) {
+        $('editor-tools').hidden = false;
+        showPlayer($('editor-title').textContent, driveMediaUrl(editorDriveFileId), $('editor-title').textContent);
+        attachFollow(currentMedia(), $('editor-body'));
+        return;
+      }
+      openFolder(currentFolderId || 'root');
     }
 
     function setJob(message) {
       $('job').textContent = message || '';
     }
 
-    if (document.documentElement.getAttribute('data-route') === 'library') {
-      fetch('/api/session').then(function (res) {
-        if (!res.ok) {
-          showSignedOut();
-          return null;
-        }
-        return res.json();
-      }).then(function (data) {
-        if (!data) return;
-        session = data;
-        showSignedIn();
-        if (window.gapi) gapi.load('picker', function () {});
-      }).catch(function () {
-        showSignedOut();
-      });
-    } else {
-      bootPublic();
-    }
+    fetch('/api/session').then(function (res) {
+      if (!res.ok) return null;
+      return res.json();
+    }).then(function (data) {
+      if (data) session = data;
+      if (routeKind(location.pathname) !== 'library') return;
+      if (!session) showSignedOut();
+      else showLibraryRoute();
+    }).catch(function () {
+      if (routeKind(location.pathname) === 'library') showSignedOut();
+    });
+    if (routeKind(location.pathname) !== 'library') showPublicRoute(location.pathname);
+
+    document.addEventListener('click', function (event) {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      var node = event.target;
+      var link = null;
+      while (node && node !== document) {
+        if (node.tagName === 'A') { link = node; break; }
+        node = node.parentNode;
+      }
+      if (!link) return;
+      var href = link.getAttribute('href') || '';
+      if (!isAppPath(href)) return;
+      if (routeKind(href) === 'library' && !session) return;
+      event.preventDefault();
+      if (href !== location.pathname) history.pushState({ path: href }, '', href);
+      showRoute(href);
+    });
+
+    window.addEventListener('popstate', function () {
+      showRoute(location.pathname);
+    });
 
     $('logout').addEventListener('click', function () {
       fetch('/auth/logout', { method: 'POST' }).finally(function () {
@@ -529,7 +565,7 @@
           openFolder(info.id);
           return;
         }
-        openFolder(info.parentId || 'root').then(function () {
+        openFolder(info.parentId || 'root', true).then(function () {
           if (info.transcribed) openEditor(info);
           else if (isRunning(info.jobStatus)) {
             activeFileId = info.id;
@@ -715,7 +751,7 @@
 
     function refreshLibrary() {
       loadTranscripts();
-      return openFolder(currentFolderId);
+      return openFolder(currentFolderId, true);
     }
 
     function beginRename(entry) {
@@ -820,7 +856,7 @@
       startJob(file.id);
     }
 
-    function openFolder(id) {
+    function openFolder(id, fresh) {
       editorGeneration += 1;
       $('editor-view').hidden = true;
       $('library-view').hidden = false;
@@ -829,15 +865,23 @@
       folderGeneration += 1;
       var generation = folderGeneration;
       setJob('');
+      var cached = folderMemory[currentFolderId];
+      if (cached && !fresh) {
+        renderBreadcrumbs(cached.breadcrumbs || []);
+        renderListing(cached);
+        return Promise.resolve(cached);
+      }
       return fetch('/api/drive/folder?id=' + encodeURIComponent(currentFolderId)).then(function (res) {
         return res.json().catch(function () { return {}; }).then(function (body) {
           if (!res.ok) throw new Error(body.error || 'Could not open that folder');
           return body;
         });
       }).then(function (data) {
-        if (generation !== folderGeneration) return;
+        folderMemory[currentFolderId] = data;
+        if (generation !== folderGeneration) return data;
         renderBreadcrumbs(data.breadcrumbs || []);
         renderListing(data);
+        return data;
       }).catch(function (error) {
         if (generation !== folderGeneration) return;
         setJob(error.message || 'Could not open that folder');
@@ -1042,16 +1086,18 @@
       }
       setEditorBusy(true);
       setEditorStatus('Publishing…', false);
+      var paragraphs = readEditor();
       fetch('/api/transcripts/' + encodeURIComponent(editorTranscriptId) + '/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paragraphs: readEditor() })
+        body: JSON.stringify({ paragraphs: paragraphs })
       }).then(function (res) {
         return res.json().catch(function () { return {}; }).then(function (data) {
           if (!res.ok) throw new Error(data.error || 'Publish failed');
           return data;
         });
       }).then(function (data) {
+        rememberPublished(data, paragraphs);
         setEditorStatus(data.path ? 'Published. ' + data.path : 'Published.', false);
       }).catch(function (error) {
         setEditorStatus(error.message || 'Publish failed', true);
@@ -1254,7 +1300,7 @@
       followedJob = id;
       setJob('Transcript ready.');
       loadTranscripts();
-      openFolder(job.parentFolderId || currentFolderId).then(function () {
+      openFolder(job.parentFolderId || currentFolderId, true).then(function () {
         if (editorGeneration !== generation + 1) return;
         openEditor({
           id: job.driveFileId,
@@ -1270,7 +1316,7 @@
       forgetJob();
       setJob(message || 'Transcription failed');
       loadTranscripts();
-      openFolder(currentFolderId);
+      openFolder(currentFolderId, true);
     }
 
     function followActiveFolder(id, job) {
@@ -1285,7 +1331,7 @@
       }
       if (!job.parentFolderId) return;
       followedJob = id;
-      openFolder(job.parentFolderId);
+      openFolder(job.parentFolderId, true);
     }
 
     function startJob(fileId) {
@@ -1312,7 +1358,7 @@
         rememberJob(result.body.transcriptId, activeStartedAt);
         showProgress({ status: result.body.status || 'transcribing' });
         loadTranscripts();
-        openFolder(currentFolderId);
+        openFolder(currentFolderId, true);
         poll(result.body.transcriptId);
       }).catch(function (error) {
         if (generation !== pollGeneration) return;
@@ -1614,34 +1660,144 @@
       section.appendChild(list);
     }
 
-    function loadPublicSession(id) {
+    function routeKind(path) {
+      if (path === '/library' || path.indexOf('/library/') === 0) return 'library';
+      if (path.indexOf('/sessions/') === 0) return 'session';
+      if (path.indexOf('/series/') === 0) return 'series';
+      if (path === '/') return 'public';
+      return '';
+    }
+
+    function isAppPath(href) {
+      return routeKind(href) !== '';
+    }
+
+    function showRoute(path) {
+      if (routeKind(path) === 'library') showLibraryRoute();
+      else showPublicRoute(path);
+    }
+
+    function previewSession(id) {
+      var catalog = pageMemory.catalog;
+      if (!catalog) return null;
+      var found = null;
+      (catalog.series || []).forEach(function (series) {
+        (series.sessions || []).forEach(function (item) {
+          if (item.id === id) found = item;
+        });
+      });
+      return found;
+    }
+
+    function paintSession(sessionItem) {
       $('series-list').hidden = true;
       $('session-list').hidden = true;
+      $('public-transcript').hidden = false;
+      $('public-title').textContent = sessionItem.title || 'Session';
+      $('editor-tools').hidden = true;
+      showPlayer(sessionItem.title || 'Session', sessionItem.mediaUrl || '', sessionItem.mimeType || sessionItem.title || '');
+      renderPublicParagraphs(sessionItem.paragraphs || []);
+    }
+
+    function paintCatalog(catalog, path) {
+      var seriesMatch = String(path || '').match(/^\/series\/([^/]+)$/);
+      if (seriesMatch) renderSessionList(catalog, decodeURIComponent(seriesMatch[1]));
+      else renderSeriesList(catalog);
+    }
+
+    function rememberPublished(data, paragraphs) {
+      if (!data || !data.id) return;
+      var title = data.title || 'Session';
+      var order = Number(data.order);
+      if (!pageMemory.catalog) {
+        pageMemory.catalog = { series: [{ id: 'teachers-training', title: "Teacher's Training", sessions: [] }] };
+      }
+      var series = null;
+      (pageMemory.catalog.series || []).forEach(function (item) {
+        if (item.id === 'teachers-training') series = item;
+      });
+      if (!series) {
+        series = { id: 'teachers-training', title: "Teacher's Training", sessions: [] };
+        pageMemory.catalog.series = [series];
+      }
+      var sessions = series.sessions || [];
+      var found = false;
+      sessions.forEach(function (item) {
+        if (item.id !== data.id) return;
+        item.title = title;
+        if (isFinite(order)) item.order = order;
+        found = true;
+      });
+      if (!found) sessions.push({ id: data.id, title: title, order: isFinite(order) ? order : sessions.length + 1 });
+      sessions.sort(function (a, b) {
+        return (a.order || 0) - (b.order || 0) || String(a.title || '').localeCompare(String(b.title || ''));
+      });
+      series.sessions = sessions;
+      pageMemory.sessions[data.id] = {
+        id: data.id,
+        title: title,
+        order: isFinite(order) ? order : sessions.length,
+        series: { id: 'teachers-training', title: "Teacher's Training" },
+        mimeType: mediaIsVideo($('editor-title').textContent) ? 'video/mp4' : 'audio/mpeg',
+        mediaUrl: '/api/sessions/' + encodeURIComponent(data.id) + '/media',
+        paragraphs: paragraphs || []
+      };
+    }
+
+    function loadPublicSession(id, requestId) {
+      var cached = pageMemory.sessions[id];
+      if (cached) {
+        paintSession(cached);
+        return;
+      }
+      var preview = previewSession(id);
+      $('series-list').hidden = true;
+      $('session-list').hidden = true;
+      $('public-transcript').hidden = false;
+      $('editor-tools').hidden = true;
+      $('public-body').textContent = '';
+      $('public-title').textContent = preview ? (preview.title || 'Session') : '';
+      hidePlayer();
+      if (preview) {
+        $('player').hidden = false;
+        $('player-title').textContent = preview.title || '';
+        $('player-time').textContent = '';
+      }
       fetch('/api/sessions/' + encodeURIComponent(id)).then(readJson).then(function (sessionItem) {
-        $('public-transcript').hidden = false;
-        $('public-title').textContent = sessionItem.title || 'Session';
-        $('editor-tools').hidden = true;
-        showPlayer(sessionItem.title || 'Session', sessionItem.mediaUrl || '', sessionItem.mimeType || '');
-        renderPublicParagraphs(sessionItem.paragraphs || []);
+        pageMemory.sessions[sessionItem.id || id] = sessionItem;
+        if (requestId !== publicRequest) return;
+        paintSession(sessionItem);
       }).catch(function (error) {
+        if (requestId !== publicRequest) return;
         showPublicMessage(error.message || 'That session was not found.');
       });
     }
 
-    function bootPublic() {
-      var path = location.pathname;
-      var sessionMatch = path.match(/^\/sessions\/([^/]+)$/);
-      if (sessionMatch) {
-        loadPublicSession(decodeURIComponent(sessionMatch[1]));
+    function loadCatalog(path, requestId) {
+      if (pageMemory.catalog) {
+        paintCatalog(pageMemory.catalog, path);
         return;
       }
       fetch('/api/catalog').then(readJson).then(function (catalog) {
-        var seriesMatch = path.match(/^\/series\/([^/]+)$/);
-        if (seriesMatch) renderSessionList(catalog, decodeURIComponent(seriesMatch[1]));
-        else renderSeriesList(catalog);
+        pageMemory.catalog = catalog;
+        if (requestId !== publicRequest) return;
+        paintCatalog(catalog, location.pathname);
       }).catch(function (error) {
+        if (requestId !== publicRequest) return;
         showPublicMessage(error.message || 'Could not load sessions');
       });
+    }
+
+    function showPublicRoute(path) {
+      publicRequest += 1;
+      var requestId = publicRequest;
+      document.documentElement.setAttribute('data-route', routeKind(path));
+      var sessionMatch = String(path || '').match(/^\/sessions\/([^/]+)$/);
+      if (sessionMatch) {
+        loadPublicSession(decodeURIComponent(sessionMatch[1]), requestId);
+        return;
+      }
+      loadCatalog(path, requestId);
     }
   </script>
 </body>

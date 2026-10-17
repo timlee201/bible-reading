@@ -444,9 +444,11 @@ export async function publishJob(drive, transcriptId, visible) {
       paragraphs,
     });
     await saveState(drive, state);
+    const saved = findPublishedSession(state.catalog, job.id);
     return {
       id: job.id,
-      title: sessionTitle(job.driveFileName),
+      title: saved?.title || sessionTitle(job.driveFileName),
+      order: saved?.order ?? null,
       path: `/sessions/${job.id}`,
       seriesPath: `/series/${SERIES_ID}`,
     };
