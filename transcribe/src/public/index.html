@@ -1,0 +1,1804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Teacher's Training</title>
+  <script>
+    (function () {
+      var path = location.pathname;
+      var route = 'public';
+      if (path === '/library' || path.indexOf('/library/') === 0) route = 'library';
+      else if (path.indexOf('/sessions/') === 0) route = 'session';
+      else if (path.indexOf('/series/') === 0) route = 'series';
+      document.documentElement.setAttribute('data-route', route);
+    })();
+  </script>
+  <style>
+    @page { size: A4; margin: 18mm 16mm; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      color: #1a1a1a;
+      background: #f6f5f2;
+      line-height: 1.45;
+    }
+    .gate {
+      max-width: 36rem;
+      margin: 0 auto;
+      padding: 1.5rem 1.1rem 3rem;
+    }
+    h1 { font-size: 1.35rem; margin: 0 0 0.75rem; }
+    .lede { margin: 0 0 1rem; }
+    .button, button.button, a.button {
+      display: inline-block;
+      min-height: 44px;
+      padding: 0.65rem 1rem;
+      border-radius: 8px;
+      border: 0;
+      background: #1a1a1a;
+      color: #fff;
+      font: inherit;
+      font-size: 1rem;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    button.ghost {
+      display: inline-block;
+      min-height: 44px;
+      margin-top: 0.6rem;
+      padding: 0.65rem 0.9rem;
+      border-radius: 8px;
+      border: 1px solid #1a1a1a;
+      background: transparent;
+      font: inherit;
+      cursor: pointer;
+    }
+    .app { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 16.5rem;
+      flex: none;
+      background: #fff;
+      border-right: 1px solid #e4e0d8;
+      padding: 1rem 0.85rem 1.5rem;
+    }
+    .sidebar h2 {
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin: 1.1rem 0 0.35rem;
+    }
+    #who { margin: 0 0 0.9rem; color: #333; overflow-wrap: anywhere; font-size: 0.92rem; }
+    .sidebar-nav { display: flex; flex-direction: column; gap: 0.2rem; }
+    .sidebar-link, .transcript-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 0;
+      background: transparent;
+      font: inherit;
+      padding: 0.45rem 0.45rem;
+      border-radius: 6px;
+      cursor: pointer;
+      color: inherit;
+    }
+    .sidebar-link[aria-current="page"], .transcript-item:hover, .sidebar-link:hover { background: #eceae4; }
+    .transcript-list, .listing { list-style: none; margin: 0; padding: 0; }
+    .transcript-list { max-height: 42vh; overflow: auto; }
+    .transcript-item { display: flex; justify-content: space-between; gap: 0.6rem; }
+    .transcript-name, .entry-name { overflow-wrap: anywhere; }
+    .transcript-status, .entry-note { color: #555; font-size: 0.82rem; flex: none; }
+    .workspace { flex: 1; min-width: 0; padding: 1rem 1.15rem 3rem; }
+    .breadcrumbs { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin: 0 0 0.8rem; }
+    .crumb, .crumb-current { font: inherit; color: inherit; }
+    .crumb { border: 0; background: transparent; padding: 0.2rem 0; cursor: pointer; text-decoration: underline; }
+    .crumb-sep { color: #777; }
+    .listing { background: #fff; border: 1px solid #e4e0d8; border-radius: 10px; }
+    .entry {
+      display: flex;
+      width: 100%;
+      justify-content: space-between;
+      gap: 0.75rem;
+      text-align: left;
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid #eeeae3;
+      padding: 0.8rem 0.85rem;
+      font: inherit;
+      cursor: pointer;
+    }
+    .entry-row:last-child .entry { border-bottom: 0; }
+    .empty { padding: 0.9rem 0.85rem; color: #555; }
+    #job { overflow-wrap: anywhere; min-height: 1.3em; }
+    #progress { margin: 0 0 0.8rem; }
+    .entry-row #progress { margin: 0 0.85rem 0.75rem; }
+    .progress-track {
+      position: relative;
+      height: 0.7rem;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #ddd9d0;
+    }
+    .progress-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 40%;
+      height: 100%;
+      border-radius: inherit;
+      background: #1a1a1a;
+      animation: progress-indeterminate 1.1s ease-in-out infinite;
+    }
+    @keyframes progress-indeterminate {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(250%); }
+    }
+    #progress-label { margin: 0.55rem 0 0; font-size: 1.05rem; }
+    html[data-route="library"] #public-view,
+    html[data-route="library"] #public-nav,
+    html:not([data-route="library"]) #signed-in,
+    html:not([data-route="library"]) #library-nav,
+    html:not([data-route="signed-out"]) #signed-out,
+    html[data-route="signed-out"] #shell,
+    html[data-route="session"] #series-list,
+    html[data-route="session"] #session-list,
+    html[data-route="series"] #series-list,
+    html[data-route="series"] #public-transcript,
+    html[data-route="public"] #session-list,
+    html[data-route="public"] #public-transcript { display: none; }
+    .player {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: #fff;
+      border: 1px solid #e4e0d8;
+      border-radius: 10px;
+      padding: 0.75rem 0.9rem 0.85rem;
+      margin: 0 0 1rem;
+    }
+    .player audio, .player video { width: 100%; max-height: 240px; }
+    .player-title { margin: 0.45rem 0 0; font-weight: 650; }
+    .player-time { margin: 0.15rem 0 0; color: #555; font-variant-numeric: tabular-nums; }
+    .reading, .editor-sheet {
+      max-width: 40rem;
+      margin: 0 auto;
+      background: #fff;
+      color: #1a1a1a;
+      padding: 1.4rem 1.5rem 3rem;
+      border-radius: 10px;
+      font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+      font-size: 1.125rem;
+      line-height: 1.55;
+    }
+    .session-list, .series-list { list-style: none; margin: 0; padding: 0; }
+    .session-link, .series-link {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.85rem 0;
+      border-bottom: 1px solid #eeeae3;
+      color: inherit;
+      text-decoration: none;
+    }
+    .session-link:hover, .series-link:hover { background: #f6f3ec; }
+    .block.is-current { background: #f3ead2; border-radius: 6px; }
+    button.cue {
+      display: block;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      line-height: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .editor-sheet h1 { font-size: 16pt; font-weight: 600; line-height: 1.3; margin: 0 0 1em; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 0 0 1.25rem;
+      font-family: system-ui, sans-serif;
+      font-size: 1rem;
+      line-height: 1.3;
+    }
+    .toolbar button {
+      font: inherit;
+      font-size: 1rem;
+      padding: 0.5rem 0.8rem;
+      min-height: 44px;
+      border-radius: 6px;
+      border: 1px solid #1a1a1a;
+      background: #fff;
+      color: #1a1a1a;
+      cursor: pointer;
+    }
+    .toolbar button:disabled { opacity: 0.6; cursor: default; }
+    .status { flex-basis: 100%; min-height: 1.3em; margin: 0; font-size: 0.95rem; }
+    .status.is-error { color: #8a1f1f; }
+    .block { margin: 0 0 0.85em; }
+    .speaker {
+      margin: 0 0 0.15em;
+      font-family: system-ui, sans-serif;
+      font-size: 10.5pt;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+    textarea.text {
+      display: block;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      resize: vertical;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      line-height: inherit;
+    }
+    textarea.text:focus { outline: 2px solid #d9d3c7; }
+    .context-menu {
+      position: fixed;
+      z-index: 30;
+      min-width: 12rem;
+      margin: 0;
+      padding: 0.3rem;
+      background: #fff;
+      border: 1px solid #e4e0d8;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+    .context-menu button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 0;
+      background: transparent;
+      font: inherit;
+      padding: 0.5rem 0.65rem;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .context-menu button:hover,
+    .context-menu button:focus { background: #eceae4; }
+    .context-menu button.danger { color: #8a1f1f; }
+    .context-menu button:disabled { opacity: 0.45; cursor: default; }
+    dialog {
+      border: 1px solid #e4e0d8;
+      border-radius: 10px;
+      padding: 1rem;
+      font: inherit;
+      color: inherit;
+      max-width: 24rem;
+      width: calc(100% - 2rem);
+    }
+    dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+    dialog h2 { font-size: 1.05rem; margin: 0 0 0.75rem; }
+    dialog label { display: block; }
+    dialog input {
+      display: block;
+      width: 100%;
+      margin-top: 0.35rem;
+      font: inherit;
+      padding: 0.5rem;
+      border: 1px solid #cfcabe;
+      border-radius: 6px;
+    }
+    .dialog-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.9rem; }
+    @media (prefers-reduced-motion: reduce) {
+      .progress-bar { animation: none; width: 100%; opacity: 0.45; }
+    }
+    @media (max-width: 800px) {
+      .app { flex-direction: column; }
+      .sidebar { width: auto; border-right: 0; border-bottom: 1px solid #e4e0d8; }
+      .button, a.button, #choose { width: 100%; text-align: center; }
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body { margin: 0; background: #fff; }
+      .app { display: block; min-height: 0; }
+      .workspace { padding: 0; }
+      .editor-sheet { max-width: none; padding: 0; border-radius: 0; }
+      textarea.text { border: 0; outline: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="gate" id="signed-out">
+    <h1>Teacher's Training</h1>
+    <p class="lede">Sign in to open the transcription library.</p>
+    <p>
+      <a class="button" id="sign-in" href="/auth/google">Sign in with Google</a>
+    </p>
+  </main>
+  <div id="shell" class="app">
+    <aside class="sidebar no-print">
+      <h1>Teacher's Training</h1>
+      <nav id="public-nav" class="sidebar-nav" aria-label="Series">
+        <a class="sidebar-link" href="/series/teachers-training">Teacher's Training</a>
+        <a class="sidebar-link" id="library-link" href="/library">Library</a>
+      </nav>
+      <div id="library-nav">
+        <p id="who"></p>
+        <nav class="sidebar-nav" aria-label="Drive">
+          <button type="button" class="sidebar-link" id="open-my-drive">My Drive</button>
+          <button type="button" class="sidebar-link" id="open-shared">Shared with me</button>
+        </nav>
+        <h2>Transcripts</h2>
+        <ul class="transcript-list" id="transcript-list"></ul>
+        <button type="button" class="button" id="choose">Choose a recording</button>
+        <button type="button" class="ghost" id="logout">Sign out</button>
+      </div>
+    </aside>
+    <div class="workspace">
+      <section id="player" class="player no-print" hidden>
+        <audio id="player-audio" controls preload="metadata"></audio>
+        <video id="player-video" controls preload="metadata" playsinline hidden></video>
+        <p id="player-title" class="player-title"></p>
+        <p id="player-time" class="player-time"></p>
+        <div class="toolbar" id="editor-tools" hidden>
+          <button type="button" id="clean">Clean up</button>
+          <button type="button" id="revert">Revert</button>
+          <button type="button" id="save">Save</button>
+          <button type="button" id="print">Print</button>
+          <button type="button" id="publish">Publish</button>
+          <p id="editor-status" class="status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+      <div id="public-view">
+        <section id="series-list" class="reading"></section>
+        <section id="session-list" class="reading" hidden></section>
+        <section id="public-transcript" class="reading" hidden>
+          <h1 id="public-title"></h1>
+          <article id="public-body"></article>
+        </section>
+      </div>
+      <div id="signed-in">
+        <nav class="breadcrumbs no-print" id="breadcrumbs" aria-label="Folder path"></nav>
+        <div id="progress-park">
+          <div id="progress" hidden>
+            <div class="progress-track" role="progressbar" aria-label="Transcription progress" aria-valuetext="">
+              <div class="progress-bar"></div>
+            </div>
+            <p id="progress-label"></p>
+          </div>
+        </div>
+        <p id="job" class="no-print" role="status"></p>
+        <div id="library-view">
+          <ul class="listing" id="listing"></ul>
+        </div>
+        <section id="editor-view" class="editor-sheet" hidden>
+          <h1 id="editor-title"></h1>
+          <article id="editor-body"></article>
+        </section>
+      </div>
+    </div>
+  </div>
+  <div id="context-menu" class="context-menu no-print" role="menu" hidden>
+    <button type="button" role="menuitem" id="menu-open" data-action="open">Open</button>
+    <button type="button" role="menuitem" id="menu-transcribe" data-action="transcribe">Transcribe</button>
+    <button type="button" role="menuitem" id="menu-rename" data-action="rename">Rename</button>
+    <button type="button" role="menuitem" id="menu-delete" class="danger" data-action="delete">Delete</button>
+    <button type="button" role="menuitem" id="menu-drive" data-action="drive">Open in Drive</button>
+  </div>
+  <dialog id="rename-dialog">
+    <form id="rename-form">
+      <h2>Rename</h2>
+      <label>Name <input id="rename-input" name="name" autocomplete="off" maxlength="255" required></label>
+      <div class="dialog-actions">
+        <button type="button" class="ghost" id="rename-cancel">Cancel</button>
+        <button type="submit" class="button">Rename</button>
+      </div>
+    </form>
+  </dialog>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script>
+    var MIME = [
+      'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave',
+      'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/x-aac',
+      'audio/webm', 'audio/ogg', 'audio/flac', 'audio/x-flac',
+      'audio/3gpp', 'audio/3gpp2', 'audio/amr', 'audio/x-ms-wma',
+      'video/mp4', 'video/webm', 'video/quicktime', 'video/mpeg',
+      'video/x-matroska', 'video/ogg', 'video/3gpp', 'video/3gpp2',
+      'video/x-msvideo', 'video/x-ms-wmv'
+    ].join(',');
+
+    var session = null;
+    var pollTimer = null;
+    var pollGeneration = 0;
+    var clockTimer = null;
+    var progressJob = null;
+    var activeStartedAt = 0;
+    var progressStage = '';
+    var activeFileId = '';
+    var followedJob = '';
+    var currentFolderId = 'root';
+    var currentBreadcrumbs = [];
+    var folderGeneration = 0;
+    var editorGeneration = 0;
+    var editorTranscriptId = '';
+    var editorDriveFileId = '';
+    var editorOriginal = [];
+    var editorHasOriginal = false;
+    var editorBusy = false;
+    var activeMedia = null;
+    var readingRoot = null;
+    var libraryStarted = false;
+    var publicRequest = 0;
+    var folderMemory = {};
+    var pageMemory = { catalog: null, sessions: {} };
+    var ACTIVE_KEY = 'transcribeActiveJob';
+
+    function $(id) { return document.getElementById(id); }
+
+    function showSignedOut() {
+      document.documentElement.setAttribute('data-route', 'signed-out');
+    }
+
+    function showLibraryRoute() {
+      document.documentElement.setAttribute('data-route', 'library');
+      if (!session) {
+        window.location.assign('/library');
+        return;
+      }
+      $('who').textContent = session.email;
+      if (!libraryStarted) {
+        libraryStarted = true;
+        if (window.gapi) gapi.load('picker', function () {});
+        openFolder(currentFolderId || 'root');
+        loadTranscripts();
+        resumeJob();
+        return;
+      }
+      if (!$('editor-view').hidden && editorDriveFileId) {
+        $('editor-tools').hidden = false;
+        showPlayer($('editor-title').textContent, driveMediaUrl(editorDriveFileId), $('editor-title').textContent);
+        attachFollow(currentMedia(), $('editor-body'));
+        return;
+      }
+      openFolder(currentFolderId || 'root');
+    }
+
+    function setJob(message) {
+      $('job').textContent = message || '';
+    }
+
+    fetch('/api/session').then(function (res) {
+      if (!res.ok) return null;
+      return res.json();
+    }).then(function (data) {
+      if (data) session = data;
+      if (routeKind(location.pathname) !== 'library') return;
+      if (!session) showSignedOut();
+      else showLibraryRoute();
+    }).catch(function () {
+      if (routeKind(location.pathname) === 'library') showSignedOut();
+    });
+    if (routeKind(location.pathname) !== 'library') showPublicRoute(location.pathname);
+
+    document.addEventListener('click', function (event) {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      var node = event.target;
+      var link = null;
+      while (node && node !== document) {
+        if (node.tagName === 'A') { link = node; break; }
+        node = node.parentNode;
+      }
+      if (!link) return;
+      var href = link.getAttribute('href') || '';
+      if (!isAppPath(href)) return;
+      if (routeKind(href) === 'library' && !session) return;
+      event.preventDefault();
+      if (href !== location.pathname) history.pushState({ path: href }, '', href);
+      showRoute(href);
+    });
+
+    window.addEventListener('popstate', function () {
+      showRoute(location.pathname);
+    });
+
+    $('logout').addEventListener('click', function () {
+      fetch('/auth/logout', { method: 'POST' }).finally(function () {
+        window.location.href = '/';
+      });
+    });
+
+    $('open-my-drive').addEventListener('click', function () { openFolder('root'); });
+    $('open-shared').addEventListener('click', function () { openFolder('shared'); });
+
+    $('choose').addEventListener('click', function () {
+      if (!session) return;
+      if (!window.google || !google.picker) {
+        setJob('Picker is still loading. Try again in a moment.');
+        if (window.gapi) gapi.load('picker', function () {});
+        return;
+      }
+      var myDrive = new google.picker.DocsView(google.picker.ViewId.DOCS);
+      myDrive.setMimeTypes(MIME);
+      myDrive.setIncludeFolders(true);
+      myDrive.setSelectFolderEnabled(false);
+      if (google.picker.DocsViewMode) myDrive.setMode(google.picker.DocsViewMode.LIST);
+      myDrive.setParent('root');
+      myDrive.setOwnedByMe(true);
+      myDrive.setLabel('My Drive');
+      var shared = new google.picker.DocsView(google.picker.ViewId.DOCS);
+      shared.setMimeTypes(MIME);
+      shared.setIncludeFolders(true);
+      shared.setSelectFolderEnabled(false);
+      if (google.picker.DocsViewMode) shared.setMode(google.picker.DocsViewMode.LIST);
+      shared.setOwnedByMe(false);
+      shared.setLabel('Shared with me');
+      var builder = new google.picker.PickerBuilder()
+        .setOAuthToken(session.accessToken)
+        .setDeveloperKey(session.pickerApiKey)
+        .setTitle('Choose a recording')
+        .setOrigin(window.location.origin)
+        .addView(myDrive)
+        .addView(shared)
+        .setCallback(onPicked);
+      builder.build().setVisible(true);
+    });
+
+    function onPicked(data) {
+      if (!data || data.action !== google.picker.Action.PICKED) return;
+      var file = data.docs && data.docs[0];
+      if (!file || !file.id) return;
+      jumpToFile(file.id);
+    }
+
+    function jumpToFile(fileId) {
+      fetch('/api/drive/file?id=' + encodeURIComponent(fileId)).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok) throw new Error(body.error || 'Could not open that file');
+          return body;
+        });
+      }).then(function (info) {
+        if (info.folder) {
+          openFolder(info.id);
+          return;
+        }
+        openFolder(info.parentId || 'root', true).then(function () {
+          if (info.transcribed) openEditor(info);
+          else if (isRunning(info.jobStatus)) {
+            activeFileId = info.id;
+            placeProgress();
+          } else startJob(info.id || fileId);
+        });
+      }).catch(function (error) {
+        setJob(error.message || 'Could not open that file');
+      });
+    }
+
+    function highlightNav() {
+      var root = currentBreadcrumbs[0] && currentBreadcrumbs[0].id;
+      $('open-my-drive').setAttribute('aria-current', root === 'root' ? 'page' : 'false');
+      $('open-shared').setAttribute('aria-current', root === 'shared' ? 'page' : 'false');
+    }
+
+    function renderBreadcrumbs(crumbs) {
+      var nav = $('breadcrumbs');
+      nav.textContent = '';
+      currentBreadcrumbs = crumbs || [];
+      currentBreadcrumbs.forEach(function (crumb, index) {
+        if (index) {
+          var sep = document.createElement('span');
+          sep.className = 'crumb-sep';
+          sep.textContent = '/';
+          nav.appendChild(sep);
+        }
+        if (crumb.file) {
+          var current = document.createElement('span');
+          current.className = 'crumb-current';
+          current.textContent = crumb.name || '';
+          current.setAttribute('aria-current', 'page');
+          nav.appendChild(current);
+          return;
+        }
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'crumb';
+        button.textContent = crumb.name || '';
+        button.addEventListener('click', function () { openFolder(crumb.id); });
+        nav.appendChild(button);
+      });
+      highlightNav();
+    }
+
+    function parkProgress() {
+      var park = $('progress-park');
+      var progress = $('progress');
+      if (park && progress && progress.parentNode !== park) park.appendChild(progress);
+    }
+
+    function placeProgress() {
+      var progress = $('progress');
+      var park = $('progress-park');
+      if (!progress || !park) return;
+      if (!progressJob) {
+        park.appendChild(progress);
+        progress.hidden = true;
+        return;
+      }
+      var row = activeFileId ? document.getElementById('row-' + activeFileId) : null;
+      if (row && !$('library-view').hidden) row.appendChild(progress);
+      else park.appendChild(progress);
+      progress.hidden = false;
+    }
+
+    function isRunning(status) {
+      return status === 'uploading' || status === 'transcribing' || status === 'saving';
+    }
+
+    function renderListing(data) {
+      parkProgress();
+      var list = $('listing');
+      list.textContent = '';
+      var folders = data.folders || [];
+      var files = data.files || [];
+      if (!folders.length && !files.length) {
+        var empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = 'This folder has no recordings.';
+        list.appendChild(empty);
+      }
+      folders.forEach(function (folder) {
+        var item = document.createElement('li');
+        item.className = 'entry-row';
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'entry';
+        var name = document.createElement('span');
+        name.className = 'entry-name';
+        name.textContent = folder.name || 'Folder';
+        var note = document.createElement('span');
+        note.className = 'entry-note';
+        note.textContent = 'Folder';
+        button.appendChild(name);
+        button.appendChild(note);
+        button.addEventListener('click', function () { openFolder(folder.id); });
+        item.addEventListener('contextmenu', function (event) {
+          openContextMenu(event, { id: folder.id, name: folder.name || 'Folder', folder: true });
+        });
+        item.appendChild(button);
+        list.appendChild(item);
+      });
+      files.forEach(function (file) {
+        var item = document.createElement('li');
+        item.className = 'entry-row';
+        item.id = 'row-' + file.id;
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'entry';
+        var name = document.createElement('span');
+        name.className = 'entry-name';
+        name.textContent = file.name || 'Recording';
+        button.appendChild(name);
+        if (file.transcribed) {
+          var done = document.createElement('span');
+          done.className = 'entry-note';
+          done.textContent = 'Transcribed';
+          button.appendChild(done);
+        } else if (file.jobStatus === 'error') {
+          var failed = document.createElement('span');
+          failed.className = 'entry-note';
+          failed.textContent = 'error';
+          button.appendChild(failed);
+        }
+        button.addEventListener('click', function () { onFileClick(file); });
+        item.addEventListener('contextmenu', function (event) {
+          openContextMenu(event, {
+            id: file.id,
+            name: file.name || 'Recording',
+            folder: false,
+            transcribed: !!file.transcribed,
+            transcriptId: file.transcriptId || '',
+            htmlFileId: file.htmlFileId || '',
+            jobStatus: file.jobStatus || '',
+            jobId: file.jobId || ''
+          });
+        });
+        item.appendChild(button);
+        list.appendChild(item);
+      });
+      var running = files.filter(function (file) { return isRunning(file.jobStatus); });
+      if (!activeFileId && running.length === 1) activeFileId = running[0].id;
+      if (running.length && !progressJob) showProgress({ status: running[0].jobStatus || 'transcribing' });
+      else placeProgress();
+    }
+
+    var menuEntry = null;
+
+    function closeContextMenu() {
+      $('context-menu').hidden = true;
+    }
+
+    function openContextMenu(event, entry) {
+      event.preventDefault();
+      event.stopPropagation();
+      menuEntry = entry;
+      var openItem = $('menu-open');
+      openItem.hidden = entry.folder ? false : !entry.transcribed;
+      openItem.textContent = entry.folder ? 'Open' : 'Open transcript';
+      var transcribeItem = $('menu-transcribe');
+      transcribeItem.hidden = !!entry.folder;
+      transcribeItem.disabled = isRunning(entry.jobStatus);
+      var menu = $('context-menu');
+      menu.hidden = false;
+      menu.style.left = '0px';
+      menu.style.top = '0px';
+      var width = menu.offsetWidth;
+      var height = menu.offsetHeight;
+      var x = event.clientX;
+      var y = event.clientY;
+      if (x + width > window.innerWidth - 8) x = Math.max(8, window.innerWidth - width - 8);
+      if (y + height > window.innerHeight - 8) y = Math.max(8, window.innerHeight - height - 8);
+      menu.style.left = x + 'px';
+      menu.style.top = y + 'px';
+    }
+
+    function driveUrl(entry) {
+      if (entry.folder) return 'https://drive.google.com/drive/folders/' + encodeURIComponent(entry.id);
+      return 'https://drive.google.com/file/d/' + encodeURIComponent(entry.id) + '/view';
+    }
+
+    function refreshLibrary() {
+      loadTranscripts();
+      return openFolder(currentFolderId, true);
+    }
+
+    function beginRename(entry) {
+      var input = $('rename-input');
+      input.value = entry.name || '';
+      $('rename-dialog').showModal();
+      input.focus();
+      input.select();
+    }
+
+    function beginDelete(entry) {
+      var kind = entry.folder ? 'folder' : 'file';
+      if (!window.confirm('Move this ' + kind + ' to trash?\n\n' + (entry.name || ''))) return;
+      setJob('');
+      fetch('/api/drive/file/' + encodeURIComponent(entry.id), { method: 'DELETE' }).then(function (res) {
+        if (res.status === 204) return {};
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok) throw new Error(body.error || 'Could not delete that item');
+          return body;
+        });
+      }).then(function () {
+        return refreshLibrary();
+      }).catch(function (error) {
+        setJob(error.message || 'Could not delete that item');
+      });
+    }
+
+    $('context-menu').addEventListener('click', function (event) {
+      var actionEl = event.target.closest ? event.target.closest('[data-action]') : null;
+      var action = actionEl && actionEl.getAttribute('data-action');
+      var entry = menuEntry;
+      if (!action || !entry || actionEl.disabled) return;
+      event.stopPropagation();
+      closeContextMenu();
+      if (action === 'open') {
+        if (entry.folder) openFolder(entry.id);
+        else openEditor(entry);
+      } else if (action === 'transcribe') {
+        startJob(entry.id);
+      } else if (action === 'rename') {
+        beginRename(entry);
+      } else if (action === 'delete') {
+        beginDelete(entry);
+      } else if (action === 'drive') {
+        window.open(driveUrl(entry), '_blank', 'noopener');
+      }
+    });
+
+    document.addEventListener('click', function (event) {
+      if (event.target.closest && event.target.closest('#context-menu')) return;
+      closeContextMenu();
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') closeContextMenu();
+    });
+    window.addEventListener('resize', closeContextMenu);
+    window.addEventListener('scroll', closeContextMenu, true);
+
+    $('rename-cancel').addEventListener('click', function () {
+      $('rename-dialog').close();
+    });
+    $('rename-form').addEventListener('submit', function (event) {
+      event.preventDefault();
+      var entry = menuEntry;
+      var name = $('rename-input').value.trim();
+      if (!entry || !name) return;
+      $('rename-dialog').close();
+      setJob('');
+      fetch('/api/drive/file/' + encodeURIComponent(entry.id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name })
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok) throw new Error(body.error || 'Could not rename that item');
+          return body;
+        });
+      }).then(function () {
+        return refreshLibrary();
+      }).catch(function (error) {
+        setJob(error.message || 'Could not rename that item');
+      });
+    });
+
+    function onFileClick(file) {
+      if (file.transcribed) {
+        openEditor(file);
+        return;
+      }
+      if (isRunning(file.jobStatus) || (progressJob && activeFileId === file.id)) {
+        activeFileId = file.id;
+        if (file.jobId) {
+          var known = rememberedJob();
+          var started = known && known.id === file.jobId ? known.startedAt : Date.now();
+          rememberJob(file.jobId, started);
+          beginPolling(file.jobId, started);
+        } else {
+          placeProgress();
+        }
+        return;
+      }
+      startJob(file.id);
+    }
+
+    function openFolder(id, fresh) {
+      editorGeneration += 1;
+      $('editor-view').hidden = true;
+      $('library-view').hidden = false;
+      hidePlayer();
+      currentFolderId = id || 'root';
+      folderGeneration += 1;
+      var generation = folderGeneration;
+      setJob('');
+      var cached = folderMemory[currentFolderId];
+      if (cached && !fresh) {
+        renderBreadcrumbs(cached.breadcrumbs || []);
+        renderListing(cached);
+        return Promise.resolve(cached);
+      }
+      return fetch('/api/drive/folder?id=' + encodeURIComponent(currentFolderId)).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok) throw new Error(body.error || 'Could not open that folder');
+          return body;
+        });
+      }).then(function (data) {
+        folderMemory[currentFolderId] = data;
+        if (generation !== folderGeneration) return data;
+        renderBreadcrumbs(data.breadcrumbs || []);
+        renderListing(data);
+        return data;
+      }).catch(function (error) {
+        if (generation !== folderGeneration) return;
+        setJob(error.message || 'Could not open that folder');
+      });
+    }
+
+    function parseTranscriptHtml(html) {
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      var titleEl = doc.querySelector('h1');
+      var originalNode = doc.getElementById('original-paragraphs');
+      var originals = [];
+      var hasOriginal = false;
+      if (originalNode) {
+        hasOriginal = true;
+        try { originals = JSON.parse(originalNode.textContent || '[]'); } catch (error) { originals = []; }
+      }
+      var paragraphs = Array.prototype.map.call(doc.querySelectorAll('section.block'), function (block) {
+        var textEl = block.querySelector('.text');
+        return paragraphTimes(block, {
+          speaker: block.getAttribute('data-speaker') || '',
+          text: textEl ? textEl.textContent : ''
+        });
+      });
+      return {
+        title: titleEl ? titleEl.textContent : '',
+        paragraphs: paragraphs,
+        originals: originals,
+        hasOriginal: hasOriginal,
+        transcriptId: doc.body ? (doc.body.getAttribute('data-transcript-id') || '') : ''
+      };
+    }
+
+    function renderEditorParagraphs(paragraphs) {
+      var body = $('editor-body');
+      body.textContent = '';
+      var previous = null;
+      (paragraphs || []).forEach(function (paragraph) {
+        var speaker = paragraph && paragraph.speaker != null ? String(paragraph.speaker) : '';
+        var text = paragraph && paragraph.text != null ? String(paragraph.text) : '';
+        var block = document.createElement('section');
+        block.className = 'block';
+        block.setAttribute('data-speaker', speaker);
+        stampTimes(block, paragraph);
+        block.addEventListener('click', function () { seekBlock(block); });
+        if (speaker && speaker !== previous) {
+          var label = document.createElement('p');
+          label.className = 'speaker';
+          label.textContent = speaker;
+          block.appendChild(label);
+        }
+        var area = document.createElement('textarea');
+        area.className = 'text';
+        area.value = text;
+        area.rows = Math.min(14, Math.max(2, Math.ceil(text.length / 64) || 2));
+        area.setAttribute('aria-label', speaker ? ('Paragraph, ' + speaker) : 'Paragraph');
+        block.appendChild(area);
+        body.appendChild(block);
+        previous = speaker;
+      });
+      attachFollow($('player-audio').hidden ? $('player-video') : $('player-audio'), body);
+    }
+
+    function readEditor() {
+      return Array.prototype.map.call($('editor-body').querySelectorAll('.block'), function (block) {
+        var area = block.querySelector('.text');
+        return paragraphTimes(block, {
+          speaker: block.getAttribute('data-speaker') || '',
+          text: area ? area.value : ''
+        });
+      });
+    }
+
+    function openEditor(file) {
+      var transcriptId = file.transcriptId || '';
+      var htmlFileId = file.htmlFileId || '';
+      if (!transcriptId && !htmlFileId) {
+        setJob('This recording has no transcript to open.');
+        return;
+      }
+      editorGeneration += 1;
+      var generation = editorGeneration;
+      setEditorStatus('', false);
+      setJob('');
+      var url = transcriptId
+        ? '/t/' + encodeURIComponent(transcriptId)
+        : '/api/drive/html/' + encodeURIComponent(htmlFileId);
+      fetch(url).then(function (res) {
+        return res.text().then(function (text) {
+          if (!res.ok) {
+            var message = 'Could not open the transcript';
+            try {
+              var parsed = JSON.parse(text);
+              if (parsed.error) message = parsed.error;
+            } catch (error) {}
+            throw new Error(message);
+          }
+          return text;
+        });
+      }).then(function (html) {
+        if (generation !== editorGeneration) return;
+        var parsed = parseTranscriptHtml(html);
+        editorTranscriptId = parsed.transcriptId || transcriptId;
+        editorOriginal = parsed.originals || [];
+        editorHasOriginal = parsed.hasOriginal;
+        $('editor-title').textContent = file.name || parsed.title || 'Transcript';
+        editorDriveFileId = file.id || '';
+        showPlayer(file.name || parsed.title || 'Transcript', driveMediaUrl(editorDriveFileId), file.mimeType || file.name || '');
+        $('editor-tools').hidden = false;
+        renderEditorParagraphs(parsed.paragraphs);
+        var crumbs = currentBreadcrumbs.filter(function (crumb) { return !crumb.file; });
+        crumbs.push({ id: file.id || '', name: file.name || parsed.title || 'Transcript', file: true });
+        renderBreadcrumbs(crumbs);
+        $('library-view').hidden = true;
+        $('editor-view').hidden = false;
+        placeProgress();
+      }).catch(function (error) {
+        if (generation !== editorGeneration) return;
+        setJob(error.message || 'Could not open the transcript');
+      });
+    }
+
+    function setEditorStatus(message, isError) {
+      var el = $('editor-status');
+      el.textContent = message || '';
+      el.classList.toggle('is-error', Boolean(isError));
+    }
+
+    function setEditorBusy(next) {
+      editorBusy = next;
+      ['clean', 'revert', 'save', 'print', 'publish'].forEach(function (id) {
+        $(id).disabled = next;
+      });
+    }
+
+    function cleanUp() {
+      if (editorBusy) return;
+      if (!editorTranscriptId) {
+        setEditorStatus('This transcript is not linked to a saved job.', true);
+        return;
+      }
+      setEditorBusy(true);
+      setEditorStatus('Cleaning up…', false);
+      fetch('/api/transcripts/' + encodeURIComponent(editorTranscriptId) + '/clean', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (!res.ok) throw new Error(data.error || 'Clean up failed');
+          return data;
+        });
+      }).then(function (data) {
+        renderEditorParagraphs(data.paragraphs || []);
+        setEditorStatus('Showing cleaned text. Save to write it to Drive.', false);
+      }).catch(function (error) {
+        setEditorStatus(error.message || 'Clean up failed', true);
+      }).finally(function () {
+        setEditorBusy(false);
+      });
+    }
+
+    function revertEditor() {
+      if (editorBusy) return;
+      if (!editorHasOriginal) {
+        setEditorStatus('Could not restore the original transcript.', true);
+        return;
+      }
+      renderEditorParagraphs(editorOriginal);
+      setEditorStatus('Restored the original transcript.', false);
+    }
+
+    function saveEditor() {
+      if (editorBusy) return;
+      if (!editorTranscriptId) {
+        setEditorStatus('This transcript is not linked to a saved job.', true);
+        return;
+      }
+      setEditorBusy(true);
+      setEditorStatus('Saving…', false);
+      fetch('/api/transcripts/' + encodeURIComponent(editorTranscriptId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paragraphs: readEditor() })
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (!res.ok) throw new Error(data.error || 'Save failed');
+          return data;
+        });
+      }).then(function () {
+        setEditorStatus('Saved to Drive.', false);
+      }).catch(function (error) {
+        setEditorStatus(error.message || 'Save failed', true);
+      }).finally(function () {
+        setEditorBusy(false);
+      });
+    }
+
+    function publishEditor() {
+      if (editorBusy) return;
+      if (!editorTranscriptId) {
+        setEditorStatus('This transcript is not linked to a saved job.', true);
+        return;
+      }
+      setEditorBusy(true);
+      setEditorStatus('Publishing…', false);
+      var paragraphs = readEditor();
+      fetch('/api/transcripts/' + encodeURIComponent(editorTranscriptId) + '/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paragraphs: paragraphs })
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (!res.ok) throw new Error(data.error || 'Publish failed');
+          return data;
+        });
+      }).then(function (data) {
+        rememberPublished(data, paragraphs);
+        setEditorStatus(data.path ? 'Published. ' + data.path : 'Published.', false);
+      }).catch(function (error) {
+        setEditorStatus(error.message || 'Publish failed', true);
+      }).finally(function () {
+        setEditorBusy(false);
+      });
+    }
+
+    $('clean').addEventListener('click', cleanUp);
+    $('revert').addEventListener('click', revertEditor);
+    $('save').addEventListener('click', saveEditor);
+    $('print').addEventListener('click', function () { window.print(); });
+    $('publish').addEventListener('click', publishEditor);
+
+    function loadTranscripts() {
+      return fetch('/api/jobs').then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok) throw new Error(body.error || 'Could not load transcripts');
+          return body.jobs || [];
+        });
+      }).then(renderTranscripts).catch(function () {});
+    }
+
+    function renderTranscripts(jobs) {
+      var list = $('transcript-list');
+      list.textContent = '';
+      if (!jobs.length) {
+        var empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = 'No transcripts yet';
+        list.appendChild(empty);
+        return;
+      }
+      jobs.forEach(function (job) {
+        var item = document.createElement('li');
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'transcript-item';
+        var name = document.createElement('span');
+        name.className = 'transcript-name';
+        name.textContent = job.name || 'Recording';
+        var status = document.createElement('span');
+        status.className = 'transcript-status';
+        status.textContent = job.status || '';
+        button.appendChild(name);
+        button.appendChild(status);
+        button.addEventListener('click', function () { openTranscriptJob(job); });
+        item.appendChild(button);
+        list.appendChild(item);
+      });
+    }
+
+    function openTranscriptJob(job) {
+      var parent = job.parentFolderId || 'root';
+      if (job.status === 'done') {
+        openFolder(parent).then(function () {
+          openEditor({
+            id: job.driveFileId,
+            name: job.name,
+            transcriptId: job.id,
+            htmlFileId: job.htmlFileId
+          });
+        });
+        return;
+      }
+      activeFileId = job.driveFileId || '';
+      if (isRunning(job.status)) {
+        if (!rememberedJob() || rememberedJob().id !== job.id) rememberJob(job.id, Date.now());
+        beginPolling(job.id, (rememberedJob() && rememberedJob().startedAt) || Date.now());
+      }
+      openFolder(parent);
+    }
+
+    function rememberedJob() {
+      try {
+        var parsed = JSON.parse(sessionStorage.getItem(ACTIVE_KEY) || 'null');
+        if (!parsed || typeof parsed.id !== 'string' || !parsed.id) return null;
+        return parsed;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function rememberJob(id, startedAt) {
+      try {
+        sessionStorage.setItem(ACTIVE_KEY, JSON.stringify({ id: id, startedAt: startedAt }));
+      } catch (error) {}
+    }
+
+    function forgetJob() {
+      try { sessionStorage.removeItem(ACTIVE_KEY); } catch (error) {}
+    }
+
+    function stageLabel(job) {
+      var status = job && job.status;
+      var assembly = job && job.assemblyStatus;
+      if (status === 'uploading') return 'Uploading the recording';
+      if (status === 'saving') return 'Saving the transcript to Drive';
+      if (status === 'transcribing' && assembly === 'queued') return 'Waiting for transcription to start';
+      return 'Transcribing';
+    }
+
+    function audioNote(seconds) {
+      if (typeof seconds !== 'number' || !isFinite(seconds) || seconds <= 0) return '';
+      var minutes = Math.max(1, Math.round(seconds / 60));
+      return 'About ' + minutes + (minutes === 1 ? ' minute' : ' minutes') + ' of audio';
+    }
+
+    function formatElapsed(ms) {
+      var total = Math.max(0, Math.floor(ms / 1000));
+      var hours = Math.floor(total / 3600);
+      var minutes = Math.floor((total % 3600) / 60);
+      var seconds = total % 60;
+      function pad(value) { return value < 10 ? '0' + value : String(value); }
+      if (hours > 0) return hours + ':' + pad(minutes) + ':' + pad(seconds);
+      return minutes + ':' + pad(seconds);
+    }
+
+    function progressLine(job) {
+      var parts = [stageLabel(job)];
+      var audio = audioNote(job && job.audioDuration);
+      if (audio) parts.push(audio);
+      parts.push(formatElapsed(Date.now() - activeStartedAt));
+      return parts.join(' · ');
+    }
+
+    function renderProgress() {
+      if (!progressJob) return;
+      var line = progressLine(progressJob);
+      $('progress-label').textContent = line;
+      var stage = stageLabel(progressJob);
+      if (stage !== progressStage) {
+        progressStage = stage;
+        document.querySelector('.progress-track').setAttribute('aria-valuetext', stage);
+      }
+    }
+
+    function showProgress(job) {
+      progressJob = job;
+      renderProgress();
+      placeProgress();
+      if (!clockTimer) clockTimer = setInterval(renderProgress, 1000);
+    }
+
+    function hideProgress() {
+      progressJob = null;
+      progressStage = '';
+      activeFileId = '';
+      placeProgress();
+      $('progress-label').textContent = '';
+      var track = document.querySelector('.progress-track');
+      if (track) track.setAttribute('aria-valuetext', '');
+      if (clockTimer) {
+        clearInterval(clockTimer);
+        clockTimer = null;
+      }
+    }
+
+    function adoptStarted(job) {
+      var parsed = Date.parse(job && job.createdAt || '');
+      if (!isNaN(parsed)) activeStartedAt = parsed;
+    }
+
+    function beginPolling(id, startedAt) {
+      pollGeneration += 1;
+      if (pollTimer) clearTimeout(pollTimer);
+      activeStartedAt = startedAt || Date.now();
+      setJob('');
+      showProgress({ status: 'transcribing' });
+      poll(id);
+    }
+
+    function resumeJob() {
+      var active = rememberedJob();
+      if (active) {
+        beginPolling(active.id, active.startedAt || Date.now());
+        return;
+      }
+      fetch('/api/jobs/current').then(function (res) {
+        if (res.status === 204) return null;
+        return res.json().catch(function () { return null; }).then(function (body) {
+          return { ok: res.ok, body: body };
+        });
+      }).then(function (result) {
+        if (!result || !result.ok || !result.body) return;
+        var id = result.body.transcriptId;
+        var status = result.body.status;
+        if (typeof id !== 'string' || !id) return;
+        if (!isRunning(status)) return;
+        if (rememberedJob()) return;
+        rememberJob(id, Date.now());
+        beginPolling(id, Date.now());
+      }).catch(function () {});
+    }
+
+    function finishJob(id, job) {
+      var generation = editorGeneration;
+      hideProgress();
+      forgetJob();
+      followedJob = id;
+      setJob('Transcript ready.');
+      loadTranscripts();
+      openFolder(job.parentFolderId || currentFolderId, true).then(function () {
+        if (editorGeneration !== generation + 1) return;
+        openEditor({
+          id: job.driveFileId,
+          name: job.name,
+          transcriptId: id,
+          htmlFileId: job.htmlFileId
+        });
+      });
+    }
+
+    function failVisible(message) {
+      hideProgress();
+      forgetJob();
+      setJob(message || 'Transcription failed');
+      loadTranscripts();
+      openFolder(currentFolderId, true);
+    }
+
+    function followActiveFolder(id, job) {
+      if (!job || !job.driveFileId) return;
+      activeFileId = job.driveFileId;
+      placeProgress();
+      if (followedJob === id) return;
+      if (document.getElementById('row-' + job.driveFileId)) {
+        followedJob = id;
+        placeProgress();
+        return;
+      }
+      if (!job.parentFolderId) return;
+      followedJob = id;
+      openFolder(job.parentFolderId, true);
+    }
+
+    function startJob(fileId) {
+      pollGeneration += 1;
+      var generation = pollGeneration;
+      if (pollTimer) clearTimeout(pollTimer);
+      forgetJob();
+      followedJob = '';
+      activeFileId = fileId;
+      activeStartedAt = Date.now();
+      setJob('');
+      showProgress({ status: 'uploading' });
+      fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId: fileId })
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          return { ok: res.ok, body: body };
+        });
+      }).then(function (result) {
+        if (generation !== pollGeneration) return;
+        if (!result.ok) throw new Error(result.body.error || 'Could not start transcription');
+        rememberJob(result.body.transcriptId, activeStartedAt);
+        showProgress({ status: result.body.status || 'transcribing' });
+        loadTranscripts();
+        openFolder(currentFolderId, true);
+        poll(result.body.transcriptId);
+      }).catch(function (error) {
+        if (generation !== pollGeneration) return;
+        failVisible(error.message || 'Could not start transcription');
+      });
+    }
+
+    function poll(id) {
+      var generation = pollGeneration;
+      fetch('/api/jobs/' + encodeURIComponent(id)).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          return { ok: res.ok, status: res.status, body: body };
+        });
+      }).then(function (result) {
+        if (generation !== pollGeneration) return;
+        if (result.status === 401 || result.status === 403 || result.status === 404) {
+          var stopped = new Error(result.body.error || 'Status check failed');
+          stopped.stop = true;
+          throw stopped;
+        }
+        if (!result.ok) throw new Error(result.body.error || 'Status check failed');
+        var job = result.body;
+        adoptStarted(job);
+        rememberJob(id, activeStartedAt);
+        if (job.status === 'done') {
+          finishJob(id, job);
+          return;
+        }
+        if (job.status === 'error') {
+          failVisible(job.error || 'Transcription failed');
+          return;
+        }
+        setJob('');
+        showProgress(job);
+        followActiveFolder(id, job);
+        pollTimer = setTimeout(function () {
+          if (generation !== pollGeneration) return;
+          poll(id);
+        }, 4000);
+      }).catch(function (error) {
+        if (generation !== pollGeneration) return;
+        if (error.stop) {
+          failVisible(error.message || 'Status check failed');
+          return;
+        }
+        setJob('');
+        showProgress(progressJob || { status: 'transcribing' });
+        $('progress-label').textContent = progressLine(progressJob) + ' · Retrying…';
+        pollTimer = setTimeout(function () {
+          if (generation !== pollGeneration) return;
+          poll(id);
+        }, 4000);
+      });
+    }
+
+    function paragraphTimes(block, item) {
+      ['start', 'end'].forEach(function (name) {
+        var value = Number(block.getAttribute('data-' + name));
+        if (isFinite(value) && value >= 0) item[name] = value;
+      });
+      return item;
+    }
+
+    function stampTimes(block, paragraph) {
+      ['start', 'end'].forEach(function (name) {
+        var value = Number(paragraph && paragraph[name]);
+        if (isFinite(value) && value >= 0) block.setAttribute('data-' + name, String(value));
+      });
+    }
+
+    function formatClock(seconds) {
+      if (!isFinite(seconds) || seconds < 0) return '0:00';
+      var whole = Math.floor(seconds);
+      var minutes = Math.floor(whole / 60);
+      var remain = whole % 60;
+      return minutes + ':' + (remain < 10 ? '0' : '') + remain;
+    }
+
+    function paragraphIndexFromBlocks(blocks, time) {
+      var found = -1;
+      Array.prototype.forEach.call(blocks, function (block, index) {
+        var start = Number(block.getAttribute('data-start'));
+        if (!isFinite(start)) return;
+        var end = Number(block.getAttribute('data-end'));
+        var until = isFinite(end) ? end : start;
+        var inside = time + 0.001 >= start && time < until;
+        var point = until === start && time + 0.001 >= start && time < start + 0.25;
+        if (inside || point) found = index;
+      });
+      if (found === -1) {
+        Array.prototype.forEach.call(blocks, function (block, index) {
+          var start = Number(block.getAttribute('data-start'));
+          if (isFinite(start) && start <= time + 0.001) found = index;
+        });
+      }
+      return found;
+    }
+
+    function currentMedia() {
+      return $('player-video').hidden ? $('player-audio') : $('player-video');
+    }
+
+    function attachFollow(media, root) {
+      if (activeMedia && activeMedia !== media) {
+        activeMedia.removeEventListener('timeupdate', highlightNow);
+        activeMedia.removeEventListener('seeked', highlightNow);
+      }
+      readingRoot = root || readingRoot;
+      if (!media) return;
+      if (activeMedia !== media) {
+        media.addEventListener('timeupdate', highlightNow);
+        media.addEventListener('seeked', highlightNow);
+      }
+      activeMedia = media;
+    }
+
+    function highlightNow() {
+      if (!activeMedia || !readingRoot) return;
+      var time = activeMedia.currentTime || 0;
+      var blocks = readingRoot.querySelectorAll('.block');
+      var index = paragraphIndexFromBlocks(blocks, time);
+      var current = null;
+      Array.prototype.forEach.call(blocks, function (block, i) {
+        var on = i === index;
+        block.classList.toggle('is-current', on);
+        if (on) current = block;
+      });
+      if (current && !activeMedia.paused) {
+        var rect = current.getBoundingClientRect();
+        if (rect.top < 140 || rect.bottom > window.innerHeight - 24) current.scrollIntoView({ block: 'nearest' });
+      }
+      var duration = activeMedia.duration;
+      $('player-time').textContent = formatClock(time) + (isFinite(duration) ? ' / ' + formatClock(duration) : '');
+    }
+
+    function seekBlock(block) {
+      var start = Number(block.getAttribute('data-start'));
+      if (!activeMedia || !isFinite(start)) return;
+      activeMedia.currentTime = start;
+      var pending = activeMedia.play();
+      if (pending && pending.catch) pending.catch(function () {});
+    }
+
+    function driveMediaUrl(fileId) {
+      if (!fileId) return '';
+      return '/api/drive/media/' + encodeURIComponent(fileId);
+    }
+
+    function mediaIsVideo(hint) {
+      var value = String(hint || '');
+      if (value.indexOf('video/') === 0) return true;
+      return /\.(mp4|webm|mov|mkv|avi|wmv|mpeg|mpg|m4v)$/i.test(value);
+    }
+
+    function hidePlayer() {
+      $('player').hidden = true;
+      $('editor-tools').hidden = true;
+      ['player-audio', 'player-video'].forEach(function (id) {
+        var media = $(id);
+        media.pause();
+        media.removeAttribute('src');
+      });
+      if (activeMedia) {
+        activeMedia.removeEventListener('timeupdate', highlightNow);
+        activeMedia.removeEventListener('seeked', highlightNow);
+      }
+      activeMedia = null;
+    }
+
+    function showPlayer(title, url, mime) {
+      var useVideo = mediaIsVideo(mime);
+      var media = useVideo ? $('player-video') : $('player-audio');
+      var other = useVideo ? $('player-audio') : $('player-video');
+      other.pause();
+      other.removeAttribute('src');
+      other.hidden = true;
+      media.hidden = false;
+      if (url) media.src = url;
+      $('player').hidden = false;
+      $('player-title').textContent = title || '';
+      $('player-time').textContent = '0:00';
+      attachFollow(media, readingRoot);
+    }
+
+    function renderPublicParagraphs(paragraphs) {
+      var body = $('public-body');
+      body.textContent = '';
+      var previous = null;
+      (paragraphs || []).forEach(function (paragraph) {
+        var speaker = paragraph && paragraph.speaker != null ? String(paragraph.speaker) : '';
+        var text = paragraph && paragraph.text != null ? String(paragraph.text) : '';
+        var block = document.createElement('section');
+        block.className = 'block';
+        block.setAttribute('data-speaker', speaker);
+        stampTimes(block, paragraph);
+        if (speaker && speaker !== previous) {
+          var label = document.createElement('p');
+          label.className = 'speaker';
+          label.textContent = speaker;
+          block.appendChild(label);
+        }
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'cue';
+        button.textContent = text;
+        button.addEventListener('click', function () { seekBlock(block); });
+        block.appendChild(button);
+        body.appendChild(block);
+        previous = speaker;
+      });
+      attachFollow(currentMedia(), body);
+    }
+
+    function readJson(res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) throw new Error(data.error || 'Could not load that page');
+        return data;
+      });
+    }
+
+    function showPublicMessage(message) {
+      hidePlayer();
+      $('session-list').hidden = true;
+      $('public-transcript').hidden = true;
+      var section = $('series-list');
+      section.hidden = false;
+      section.textContent = '';
+      var note = document.createElement('p');
+      note.textContent = message;
+      section.appendChild(note);
+    }
+
+    function renderSeriesList(catalog) {
+      hidePlayer();
+      $('session-list').hidden = true;
+      $('public-transcript').hidden = true;
+      var section = $('series-list');
+      section.hidden = false;
+      section.textContent = '';
+      var heading = document.createElement('h1');
+      heading.textContent = "Teacher's Training";
+      section.appendChild(heading);
+      var list = document.createElement('ul');
+      list.className = 'series-list';
+      (catalog.series || []).forEach(function (series) {
+        var item = document.createElement('li');
+        var link = document.createElement('a');
+        link.className = 'series-link';
+        link.href = '/series/' + encodeURIComponent(series.id);
+        var name = document.createElement('span');
+        name.textContent = series.title || 'Series';
+        var count = document.createElement('span');
+        count.className = 'entry-note';
+        count.textContent = (series.sessions || []).length + ' sessions';
+        link.appendChild(name);
+        link.appendChild(count);
+        item.appendChild(link);
+        list.appendChild(item);
+      });
+      section.appendChild(list);
+    }
+
+    function renderSessionList(catalog, seriesId) {
+      var series = null;
+      (catalog.series || []).forEach(function (item) {
+        if (item.id === seriesId) series = item;
+      });
+      if (!series) {
+        showPublicMessage('That series was not found.');
+        return;
+      }
+      hidePlayer();
+      $('series-list').hidden = true;
+      $('public-transcript').hidden = true;
+      var section = $('session-list');
+      section.hidden = false;
+      section.textContent = '';
+      var heading = document.createElement('h1');
+      heading.textContent = series.title || "Teacher's Training";
+      section.appendChild(heading);
+      var sessions = series.sessions || [];
+      if (!sessions.length) {
+        var empty = document.createElement('p');
+        empty.textContent = 'No sessions have been published yet.';
+        section.appendChild(empty);
+        return;
+      }
+      var list = document.createElement('ol');
+      list.className = 'session-list';
+      sessions.forEach(function (sessionItem) {
+        var item = document.createElement('li');
+        var link = document.createElement('a');
+        link.className = 'session-link';
+        link.href = '/sessions/' + encodeURIComponent(sessionItem.id);
+        link.textContent = (sessionItem.order ? sessionItem.order + '. ' : '') + (sessionItem.title || 'Session');
+        item.appendChild(link);
+        list.appendChild(item);
+      });
+      section.appendChild(list);
+    }
+
+    function routeKind(path) {
+      if (path === '/library' || path.indexOf('/library/') === 0) return 'library';
+      if (path.indexOf('/sessions/') === 0) return 'session';
+      if (path.indexOf('/series/') === 0) return 'series';
+      if (path === '/') return 'public';
+      return '';
+    }
+
+    function isAppPath(href) {
+      return routeKind(href) !== '';
+    }
+
+    function showRoute(path) {
+      if (routeKind(path) === 'library') showLibraryRoute();
+      else showPublicRoute(path);
+    }
+
+    function previewSession(id) {
+      var catalog = pageMemory.catalog;
+      if (!catalog) return null;
+      var found = null;
+      (catalog.series || []).forEach(function (series) {
+        (series.sessions || []).forEach(function (item) {
+          if (item.id === id) found = item;
+        });
+      });
+      return found;
+    }
+
+    function paintSession(sessionItem) {
+      $('series-list').hidden = true;
+      $('session-list').hidden = true;
+      $('public-transcript').hidden = false;
+      $('public-title').textContent = sessionItem.title || 'Session';
+      $('editor-tools').hidden = true;
+      showPlayer(sessionItem.title || 'Session', sessionItem.mediaUrl || '', sessionItem.mimeType || sessionItem.title || '');
+      renderPublicParagraphs(sessionItem.paragraphs || []);
+    }
+
+    function paintCatalog(catalog, path) {
+      var seriesMatch = String(path || '').match(/^\/series\/([^/]+)$/);
+      if (seriesMatch) renderSessionList(catalog, decodeURIComponent(seriesMatch[1]));
+      else renderSeriesList(catalog);
+    }
+
+    function rememberPublished(data, paragraphs) {
+      if (!data || !data.id) return;
+      var title = data.title || 'Session';
+      var order = Number(data.order);
+      if (!pageMemory.catalog) {
+        pageMemory.catalog = { series: [{ id: 'teachers-training', title: "Teacher's Training", sessions: [] }] };
+      }
+      var series = null;
+      (pageMemory.catalog.series || []).forEach(function (item) {
+        if (item.id === 'teachers-training') series = item;
+      });
+      if (!series) {
+        series = { id: 'teachers-training', title: "Teacher's Training", sessions: [] };
+        pageMemory.catalog.series = [series];
+      }
+      var sessions = series.sessions || [];
+      var found = false;
+      sessions.forEach(function (item) {
+        if (item.id !== data.id) return;
+        item.title = title;
+        if (isFinite(order)) item.order = order;
+        found = true;
+      });
+      if (!found) sessions.push({ id: data.id, title: title, order: isFinite(order) ? order : sessions.length + 1 });
+      sessions.sort(function (a, b) {
+        return (a.order || 0) - (b.order || 0) || String(a.title || '').localeCompare(String(b.title || ''));
+      });
+      series.sessions = sessions;
+      pageMemory.sessions[data.id] = {
+        id: data.id,
+        title: title,
+        order: isFinite(order) ? order : sessions.length,
+        series: { id: 'teachers-training', title: "Teacher's Training" },
+        mimeType: mediaIsVideo($('editor-title').textContent) ? 'video/mp4' : 'audio/mpeg',
+        mediaUrl: '/api/sessions/' + encodeURIComponent(data.id) + '/media',
+        paragraphs: paragraphs || []
+      };
+    }
+
+    function loadPublicSession(id, requestId) {
+      var cached = pageMemory.sessions[id];
+      if (cached) {
+        paintSession(cached);
+        return;
+      }
+      var preview = previewSession(id);
+      $('series-list').hidden = true;
+      $('session-list').hidden = true;
+      $('public-transcript').hidden = false;
+      $('editor-tools').hidden = true;
+      $('public-body').textContent = '';
+      $('public-title').textContent = preview ? (preview.title || 'Session') : '';
+      hidePlayer();
+      if (preview) {
+        $('player').hidden = false;
+        $('player-title').textContent = preview.title || '';
+        $('player-time').textContent = '';
+      }
+      fetch('/api/sessions/' + encodeURIComponent(id)).then(readJson).then(function (sessionItem) {
+        pageMemory.sessions[sessionItem.id || id] = sessionItem;
+        if (requestId !== publicRequest) return;
+        paintSession(sessionItem);
+      }).catch(function (error) {
+        if (requestId !== publicRequest) return;
+        showPublicMessage(error.message || 'That session was not found.');
+      });
+    }
+
+    function loadCatalog(path, requestId) {
+      if (pageMemory.catalog) {
+        paintCatalog(pageMemory.catalog, path);
+        return;
+      }
+      fetch('/api/catalog').then(readJson).then(function (catalog) {
+        pageMemory.catalog = catalog;
+        if (requestId !== publicRequest) return;
+        paintCatalog(catalog, location.pathname);
+      }).catch(function (error) {
+        if (requestId !== publicRequest) return;
+        showPublicMessage(error.message || 'Could not load sessions');
+      });
+    }
+
+    function showPublicRoute(path) {
+      publicRequest += 1;
+      var requestId = publicRequest;
+      document.documentElement.setAttribute('data-route', routeKind(path));
+      var sessionMatch = String(path || '').match(/^\/sessions\/([^/]+)$/);
+      if (sessionMatch) {
+        loadPublicSession(decodeURIComponent(sessionMatch[1]), requestId);
+        return;
+      }
+      loadCatalog(path, requestId);
+    }
+  </script>
+</body>
+</html>

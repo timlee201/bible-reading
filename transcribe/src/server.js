@@ -1,0 +1,769 @@
+import crypto from 'node:crypto';
+import path from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import express from 'express';
+import { cleanParagraphs, getTranscript } from './assemblyai.js';
+import {
+  SERIES_ID,
+  SERIES_TITLE,
+  findPublishedSession,
+  publicCatalog,
+} from './catalog.js';
+import {
+  breadcrumbChain,
+  createDrive,
+  exchangeCode,
+  fetchDriveMedia,
+  getAuthUrl,
+  getDriveFile,
+  listDriveChildren,
+  readDriveFileText,
+  refreshAccessToken,
+  renameDriveFile,
+  trashDriveFile,
+} from './google.js';
+import {
+  ensureParagraphTimes,
+  failJob,
+  jobView,
+  latestOpenJob,
+  listJobViews,
+  loadJob,
+  publishJob,
+  rebuildIfInterleaved,
+  renameJobsForDriveFile,
+  saveVisibleParagraphs,
+  submitDriveFile,
+  syncJob,
+} from './jobs.js';
+import {
+  breadcrumbsFor,
+  buildFolderView,
+  describeMediaFile,
+  isMediaMime,
+  normalizeDriveName,
+  normalizeFolderId,
+} from './library.js';
+import { renderTranscript } from './render.js';
+import {
+  fallbackRefreshToken,
+  refreshTokenFromFileToken,
+  rememberRefreshToken,
+  unseal,
+} from './seal.js';
+import { loadState, saveState } from './state.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
+
+function firstExisting(candidates) {
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+function publicIndexPath() {
+  const found = firstExisting([
+    path.join(__dirname, 'public', 'index.html'),
+    path.join(process.cwd(), 'src', 'public', 'index.html'),
+    path.join(process.cwd(), 'public', 'index.html'),
+  ]);
+  if (!found) {
+    const error = new Error('Picker page was not found');
+    error.status = 500;
+    throw error;
+  }
+  return found;
+}
+
+function appOrigin() {
+  return (process.env.APP_ORIGIN || '').trim().replace(/\/$/, '');
+}
+
+function allowedEmail() {
+  return (process.env.ALLOWED_EMAIL || '').trim().toLowerCase();
+}
+
+function safeError(err) {
+  const msg = String(err?.message || err || 'Request failed');
+  const redacted = msg
+    .replace(/ya29\.[0-9A-Za-z\-_]+/g, '[redacted]')
+    .replace(/1\/\/[0-9A-Za-z\-_]+/g, '[redacted]')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]');
+  if (/api[_-]?key|session_secret|webhook_secret|client_secret/i.test(redacted)) {
+    return 'Request failed';
+  }
+  return redacted.slice(0, 300);
+}
+
+function timingSafeEqualString(a, b) {
+  const left = Buffer.from(String(a));
+  const right = Buffer.from(String(b));
+  if (left.length !== right.length || left.length === 0) return false;
+  return crypto.timingSafeEqual(left, right);
+}
+
+function parseCookies(header) {
+  const out = {};
+  if (!header) return out;
+  for (const part of header.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (key) out[key] = value;
+  }
+  return out;
+}
+
+function cookieAttributes(maxAge) {
+  const secure = appOrigin().startsWith('https://') ? '; Secure' : '';
+  return `HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`;
+}
+
+function appendCookie(res, name, value, maxAge) {
+  res.append('Set-Cookie', `${name}=${value}; ${cookieAttributes(maxAge)}`);
+}
+
+function encodeSession(session) {
+  const payload = Buffer.from(JSON.stringify({
+    email: session.email,
+    accessToken: session.accessToken,
+    expiry: session.expiry,
+    refreshToken: session.refreshToken,
+  })).toString('base64url');
+  const mac = crypto.createHmac('sha256', process.env.SESSION_SECRET).update(payload).digest('base64url');
+  return `${payload}.${mac}`;
+}
+
+function readSession(req) {
+  const raw = parseCookies(req.headers.cookie).session;
+  if (!raw || !process.env.SESSION_SECRET) return null;
+  const splitAt = raw.lastIndexOf('.');
+  if (splitAt <= 0) return null;
+  const payload = raw.slice(0, splitAt);
+  const mac = raw.slice(splitAt + 1);
+  const expected = crypto.createHmac('sha256', process.env.SESSION_SECRET).update(payload).digest('base64url');
+  if (!timingSafeEqualString(mac, expected)) return null;
+  try {
+    const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!session?.email || !session?.refreshToken) return null;
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+function emailsMatch(email) {
+  return String(email || '').trim().toLowerCase() === allowedEmail() && allowedEmail() !== '';
+}
+
+function setSessionCookie(res, session) {
+  appendCookie(res, 'session', encodeSession(session), SESSION_MAX_AGE);
+}
+
+function clearSessionCookie(res) {
+  appendCookie(res, 'session', '', 0);
+}
+
+async function freshen(session, res) {
+  const expiry = Number(session.expiry) || 0;
+  if (session.accessToken && expiry - 60_000 > Date.now()) {
+    rememberRefreshToken(session.refreshToken);
+    return session;
+  }
+  const next = await refreshAccessToken(session.refreshToken);
+  session.accessToken = next.accessToken;
+  session.expiry = next.expiry;
+  session.refreshToken = next.refreshToken;
+  rememberRefreshToken(session.refreshToken);
+  setSessionCookie(res, session);
+  return session;
+}
+
+function driveFromSession(session) {
+  return createDrive({
+    refreshToken: session.refreshToken,
+    accessToken: session.accessToken,
+    expiry: session.expiry,
+  });
+}
+
+function asyncHandler(fn) {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+
+function requireSession(req, res, next) {
+  const session = readSession(req);
+  if (session && !emailsMatch(session.email)) {
+    clearSessionCookie(res);
+    if (req.path.startsWith('/api/')) return res.status(403).json({ error: 'Forbidden' });
+    return res.status(403).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Not allowed</title><p>This Google account is not allowed to use this app.</p>');
+  }
+  if (!session) {
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized' });
+    return res.redirect('/auth/google');
+  }
+  freshen(session, res).then((fresh) => {
+    req.sessionUser = fresh;
+    next();
+  }).catch((error) => {
+    console.error(safeError(error));
+    clearSessionCookie(res);
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized' });
+    return res.redirect('/auth/google');
+  });
+}
+
+function transcriptCors(req, res, next) {
+  const origin = req.headers.origin;
+  if (origin === 'null' || (origin && origin === appOrigin())) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, PUT, OPTIONS');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+}
+
+function authorizeTranscript(req, res, next) {
+  const session = readSession(req);
+  if (session && emailsMatch(session.email)) {
+    freshen(session, res).then((fresh) => {
+      req.sessionUser = fresh;
+      next();
+    }).catch((error) => {
+      console.error(safeError(error));
+      res.status(401).json({ error: 'Unauthorized' });
+    });
+    return;
+  }
+  const header = req.get('authorization') || '';
+  const match = header.match(/^Bearer\s+(\S+)\s*$/i);
+  if (!match) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    req.fileBearer = match[1];
+    req.bearerRefreshToken = refreshTokenFromFileToken(match[1]);
+  } catch {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+function webhookAuthorized(req) {
+  const expected = process.env.WEBHOOK_SECRET || '';
+  const got = req.get('x-webhook-secret') || '';
+  if (!expected || !got) return false;
+  return timingSafeEqualString(got, expected);
+}
+
+function finiteTime(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return null;
+  return number;
+}
+
+function normalizeParagraphs(input) {
+  if (!Array.isArray(input)) return null;
+  return input.map((paragraph) => {
+    const record = {
+      speaker: paragraph && paragraph.speaker != null ? String(paragraph.speaker) : '',
+      text: paragraph && paragraph.text != null ? String(paragraph.text) : '',
+    };
+    const start = finiteTime(paragraph?.start);
+    const end = finiteTime(paragraph?.end);
+    if (start != null) record.start = start;
+    if (end != null) record.end = end;
+    return record;
+  });
+}
+
+const PUBLIC_CACHE = 'public, max-age=60, stale-while-revalidate=86400';
+
+function sendApp(res, cache) {
+  res.setHeader('Cache-Control', cache ? PUBLIC_CACHE : 'no-store');
+  res.sendFile(publicIndexPath());
+}
+
+async function pipeDriveMedia(res, tokens, fileId, range) {
+  const upstream = await fetchDriveMedia(tokens, fileId, range);
+  res.status(upstream.status);
+  for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+    const value = upstream.headers.get(name);
+    if (value) res.setHeader(name, value);
+  }
+  if (!res.getHeader('accept-ranges')) res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Cache-Control', 'private, no-store');
+  if (!upstream.ok && upstream.status !== 206) {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return res.end();
+  }
+  if (!upstream.body) return res.end();
+  const reader = upstream.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!res.write(Buffer.from(value))) {
+        await new Promise((resolve) => res.once('drain', resolve));
+      }
+    }
+  } finally {
+    res.end();
+  }
+}
+
+async function ownerDrive() {
+  const refreshToken = fallbackRefreshToken();
+  if (!refreshToken) {
+    const error = new Error('Published sessions are not available yet');
+    error.status = 503;
+    throw error;
+  }
+  return createDrive({ refreshToken });
+}
+
+async function driveForWebhook(sealed) {
+  let refreshToken = '';
+  if (sealed) {
+    try {
+      refreshToken = unseal(sealed);
+    } catch {
+      console.error('webhook seal rejected');
+      return null;
+    }
+  }
+  if (!refreshToken) refreshToken = fallbackRefreshToken();
+  if (!refreshToken) return null;
+  return createDrive({ refreshToken });
+}
+
+export function createApp() {
+  const app = express();
+  app.disable('x-powered-by');
+  app.use(express.json({ limit: '8mb' }));
+
+  app.get('/', (req, res) => {
+    sendApp(res, true);
+  });
+
+  app.get('/series/:seriesId', (req, res) => {
+    if (req.params.seriesId !== SERIES_ID) {
+      return res.status(404).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Not found</title><p>That series was not found.</p>');
+    }
+    sendApp(res, true);
+  });
+
+  app.get('/sessions/:sessionId', (req, res) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.sessionId)) {
+      return res.status(404).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Not found</title><p>That session was not found.</p>');
+    }
+    sendApp(res, true);
+  });
+
+  app.get('/library', requireSession, (req, res) => {
+    sendApp(res, false);
+  });
+
+  app.get('/favicon.ico', (req, res) => {
+    res.status(204).end();
+  });
+
+  app.get('/auth/google', (req, res) => {
+    const state = crypto.randomBytes(16).toString('base64url');
+    appendCookie(res, 'oauth_state', state, 600);
+    res.redirect(getAuthUrl(state));
+  });
+
+  app.get('/auth/callback', asyncHandler(async (req, res) => {
+    const expected = parseCookies(req.headers.cookie).oauth_state || '';
+    const received = typeof req.query.state === 'string' ? req.query.state : '';
+    appendCookie(res, 'oauth_state', '', 0);
+    if (!req.query.code || req.query.error || !timingSafeEqualString(received, expected)) {
+      return res.status(400).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Sign-in</title><p>Sign-in was cancelled. <a href="/auth/google">Try again</a>.</p>');
+    }
+    const auth = await exchangeCode(req.query.code);
+    if (!emailsMatch(auth.email)) {
+      clearSessionCookie(res);
+      return res.status(403).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Not allowed</title><p>This Google account is not allowed to use this app.</p>');
+    }
+    const drive = createDrive({
+      refreshToken: auth.refreshToken,
+      accessToken: auth.accessToken,
+      expiry: auth.expiry,
+    });
+    if (!auth.refreshToken) {
+      try {
+        const existing = await loadState(drive);
+        if (existing.refreshToken) auth.refreshToken = existing.refreshToken;
+      } catch {
+        auth.refreshToken = '';
+      }
+    }
+    if (!auth.refreshToken) {
+      clearSessionCookie(res);
+      return res.status(400).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Sign-in</title><p>Google did not return a refresh token. Remove this app’s access in your Google Account and sign in again.</p>');
+    }
+    const state = await loadState(drive);
+    state.refreshToken = auth.refreshToken;
+    await saveState(drive, state);
+    rememberRefreshToken(auth.refreshToken);
+    setSessionCookie(res, auth);
+    res.redirect('/library');
+  }));
+
+  app.post('/auth/logout', (req, res) => {
+    clearSessionCookie(res);
+    res.status(204).end();
+  });
+
+  app.get('/api/catalog', asyncHandler(async (req, res) => {
+    const drive = await ownerDrive();
+    const state = await loadState(drive);
+    res.setHeader('Cache-Control', PUBLIC_CACHE);
+    res.json(publicCatalog(state.catalog));
+  }));
+
+  app.get('/api/sessions/:sessionId', asyncHandler(async (req, res) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.sessionId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const drive = await ownerDrive();
+    const state = await loadState(drive);
+    const session = findPublishedSession(state.catalog, req.params.sessionId);
+    if (!session) return res.status(404).json({ error: 'Not found' });
+    res.setHeader('Cache-Control', PUBLIC_CACHE);
+    res.json({
+      id: session.id,
+      title: session.title,
+      order: session.order,
+      series: { id: SERIES_ID, title: SERIES_TITLE },
+      mimeType: session.mimeType || '',
+      mediaUrl: `/api/sessions/${session.id}/media`,
+      paragraphs: session.paragraphs,
+    });
+  }));
+
+  app.get('/api/sessions/:sessionId/media', asyncHandler(async (req, res) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.sessionId)) return res.status(404).end();
+    const refreshToken = fallbackRefreshToken();
+    if (!refreshToken) return res.status(503).end();
+    const drive = createDrive({ refreshToken });
+    const state = await loadState(drive);
+    const session = findPublishedSession(state.catalog, req.params.sessionId);
+    if (!session) return res.status(404).end();
+    const tokens = await refreshAccessToken(refreshToken);
+    await pipeDriveMedia(res, tokens, session.driveFileId, req.headers.range);
+  }));
+
+  app.get('/api/drive/media/:fileId', requireSession, asyncHandler(async (req, res) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.fileId)) return res.status(400).end();
+    const tokens = await refreshAccessToken(req.sessionUser.refreshToken);
+    await pipeDriveMedia(res, {
+      refreshToken: tokens.refreshToken,
+      accessToken: tokens.accessToken,
+      expiry: tokens.expiry,
+    }, req.params.fileId, req.headers.range);
+  }));
+
+  app.get('/api/session', requireSession, (req, res) => {
+    res.json({
+      email: req.sessionUser.email,
+      accessToken: req.sessionUser.accessToken,
+      pickerApiKey: process.env.GOOGLE_API_KEY || '',
+    });
+  });
+
+  app.get('/api/drive/folder', requireSession, asyncHandler(async (req, res) => {
+    const folderId = normalizeFolderId(typeof req.query.id === 'string' ? req.query.id : 'root');
+    if (!folderId) return res.status(400).json({ error: 'Invalid folder' });
+    const drive = driveFromSession(req.sessionUser);
+    const state = await loadState(drive);
+    const files = await listDriveChildren(drive, folderId);
+    let breadcrumbs;
+    if (folderId === 'root' || folderId === 'shared') {
+      breadcrumbs = breadcrumbsFor(folderId);
+    } else {
+      const walked = await breadcrumbChain(drive, folderId);
+      breadcrumbs = breadcrumbsFor(folderId, walked.chain, walked.rootId);
+    }
+    res.json(buildFolderView({ id: folderId, breadcrumbs, files, jobs: state.jobs }));
+  }));
+
+  app.get('/api/drive/file', requireSession, asyncHandler(async (req, res) => {
+    const fileId = typeof req.query.id === 'string' ? req.query.id : '';
+    if (!/^[a-zA-Z0-9_-]+$/.test(fileId)) return res.status(400).json({ error: 'Invalid file' });
+    const drive = driveFromSession(req.sessionUser);
+    const state = await loadState(drive);
+    const meta = await getDriveFile(drive, fileId);
+    if (meta.mimeType === 'application/vnd.google-apps.folder') {
+      return res.json({ id: meta.id, name: meta.name || 'Folder', folder: true });
+    }
+    const root = await drive.files.get({ fileId: 'root', fields: 'id' });
+    const parent = Array.isArray(meta.parents) ? meta.parents[0] : '';
+    const parentId = parent && parent !== root.data.id ? parent : 'root';
+    let files = [];
+    try {
+      files = await listDriveChildren(drive, parentId);
+    } catch (error) {
+      console.error(safeError(error));
+    }
+    const view = buildFolderView({ id: parentId, breadcrumbs: [], files, jobs: state.jobs });
+    const found = view.files.find((file) => file.id === meta.id)
+      || describeMediaFile(meta, { jobs: state.jobs, siblingNames: [], siblingIds: {} });
+    res.json({
+      ...found,
+      name: meta.name || found.name,
+      mimeType: meta.mimeType || found.mimeType,
+      parentId,
+      folder: false,
+    });
+  }));
+
+  app.patch('/api/drive/file/:fileId', requireSession, asyncHandler(async (req, res) => {
+    const fileId = req.params.fileId;
+    if (!/^[a-zA-Z0-9_-]+$/.test(fileId)) return res.status(400).json({ error: 'Invalid file' });
+    const name = normalizeDriveName(req.body?.name);
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+    const drive = driveFromSession(req.sessionUser);
+    const updated = await renameDriveFile(drive, fileId, name);
+    const savedName = updated.name || name;
+    await renameJobsForDriveFile(drive, fileId, savedName);
+    res.json({ id: updated.id || fileId, name: savedName });
+  }));
+
+  app.delete('/api/drive/file/:fileId', requireSession, asyncHandler(async (req, res) => {
+    const fileId = req.params.fileId;
+    if (!/^[a-zA-Z0-9_-]+$/.test(fileId)) return res.status(400).json({ error: 'Invalid file' });
+    const drive = driveFromSession(req.sessionUser);
+    await trashDriveFile(drive, fileId);
+    res.status(204).end();
+  }));
+
+  app.get('/api/drive/html/:fileId', requireSession, asyncHandler(async (req, res) => {
+    const fileId = req.params.fileId;
+    if (!/^[a-zA-Z0-9_-]+$/.test(fileId)) return res.status(404).json({ error: 'Not found' });
+    const drive = driveFromSession(req.sessionUser);
+    const meta = await getDriveFile(drive, fileId);
+    const mime = meta.mimeType || '';
+    const name = meta.name || '';
+    if (mime !== 'text/html' && !name.endsWith('.html')) {
+      return res.status(415).json({ error: 'Not an HTML transcript' });
+    }
+    if (isMediaMime(mime)) return res.status(415).json({ error: 'Not an HTML transcript' });
+    const html = await readDriveFileText(drive, fileId, { supportsAllDrives: true });
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(html);
+  }));
+
+  app.post('/api/jobs', requireSession, asyncHandler(async (req, res) => {
+    const fileId = req.body?.fileId;
+    if (typeof fileId !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(fileId)) {
+      return res.status(400).json({ error: 'fileId is required' });
+    }
+    const drive = driveFromSession(req.sessionUser);
+    try {
+      const job = await submitDriveFile(drive, {
+        fileId,
+        refreshToken: req.sessionUser.refreshToken,
+      });
+      res.json({ transcriptId: job.id, status: job.status });
+    } catch (error) {
+      const status = Number(error.status) || 502;
+      console.error(safeError(error));
+      res.status(status).json({ error: safeError(error) });
+    }
+  }));
+
+  app.get('/api/jobs', requireSession, asyncHandler(async (req, res) => {
+    const drive = driveFromSession(req.sessionUser);
+    const state = await loadState(drive);
+    res.json({ jobs: listJobViews(state.jobs) });
+  }));
+
+  app.get('/api/jobs/current', requireSession, asyncHandler(async (req, res) => {
+    const drive = driveFromSession(req.sessionUser);
+    const state = await loadState(drive);
+    const job = latestOpenJob(state.jobs);
+    if (!job) return res.status(204).end();
+    res.json({ transcriptId: job.id, status: job.status });
+  }));
+
+  app.get('/api/jobs/:transcriptId', requireSession, asyncHandler(async (req, res) => {
+    const transcriptId = req.params.transcriptId;
+    if (!/^[a-zA-Z0-9_-]+$/.test(transcriptId)) {
+      return res.status(400).json({ error: 'Not found' });
+    }
+    const drive = driveFromSession(req.sessionUser);
+    const job = await syncJob(drive, transcriptId);
+    if (!job) return res.status(404).json({ error: 'Not found' });
+    res.json(jobView(job));
+  }));
+
+  async function handleWebhook(req, res) {
+    if (!webhookAuthorized(req)) return res.status(401).end();
+    const transcriptId = req.body?.transcript_id || req.body?.transcriptId;
+    const status = req.body?.status;
+    try {
+      const drive = await driveForWebhook(req.params.sealed);
+      if (!drive) {
+        console.error('webhook: no Drive credentials');
+      } else if (typeof transcriptId === 'string' && transcriptId) {
+        if (status === 'completed') {
+          await syncJob(drive, transcriptId, { assumeCompleted: true });
+        } else if (status === 'error') {
+          let message = 'Transcription failed';
+          try {
+            const remote = await getTranscript(transcriptId);
+            if (remote.error) message = String(remote.error).slice(0, 300);
+          } catch (error) {
+            console.error(safeError(error));
+          }
+          await failJob(drive, transcriptId, message);
+        }
+      }
+    } catch (error) {
+      console.error(safeError(error));
+    }
+    res.status(200).json({ ok: true });
+  }
+
+  app.post('/api/webhooks/assemblyai', asyncHandler(handleWebhook));
+  app.post('/api/webhooks/assemblyai/:sealed', asyncHandler(handleWebhook));
+
+  app.options('/api/transcripts/:transcriptId/clean', transcriptCors);
+  app.options('/api/transcripts/:transcriptId', transcriptCors);
+
+  app.post('/api/transcripts/:transcriptId/clean', transcriptCors, authorizeTranscript, asyncHandler(async (req, res) => {
+    const drive = req.sessionUser
+      ? driveFromSession(req.sessionUser)
+      : createDrive({ refreshToken: req.bearerRefreshToken });
+    const { job } = await loadJob(drive, req.params.transcriptId);
+    if (!job) return res.status(404).json({ error: 'Not found' });
+    if (req.fileBearer && !timingSafeEqualString(req.fileBearer, job.fileToken)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (job.status !== 'done') return res.status(409).json({ error: 'Transcript is not ready' });
+    const rebuilt = await rebuildIfInterleaved(drive, req.params.transcriptId);
+    if (rebuilt) return res.json({ paragraphs: rebuilt.paragraphs });
+    const paragraphs = await cleanParagraphs(job.originalParagraphs || []);
+    res.json({ paragraphs });
+  }));
+
+  app.put('/api/transcripts/:transcriptId', transcriptCors, authorizeTranscript, asyncHandler(async (req, res) => {
+    const paragraphs = normalizeParagraphs(req.body?.paragraphs);
+    if (!paragraphs) return res.status(400).json({ error: 'paragraphs must be a list of speaker and text' });
+    const drive = req.sessionUser
+      ? driveFromSession(req.sessionUser)
+      : createDrive({ refreshToken: req.bearerRefreshToken });
+    const { job } = await loadJob(drive, req.params.transcriptId);
+    if (!job) return res.status(404).json({ error: 'Not found' });
+    if (req.fileBearer && !timingSafeEqualString(req.fileBearer, job.fileToken)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const saved = await saveVisibleParagraphs(drive, req.params.transcriptId, paragraphs);
+    res.json({ htmlFileId: saved.htmlFileId });
+  }));
+
+  app.post('/api/transcripts/:transcriptId/publish', requireSession, asyncHandler(async (req, res) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.transcriptId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const visible = req.body?.paragraphs == null ? null : normalizeParagraphs(req.body.paragraphs);
+    if (req.body?.paragraphs != null && !visible) {
+      return res.status(400).json({ error: 'paragraphs must be a list of speaker and text' });
+    }
+    const drive = driveFromSession(req.sessionUser);
+    const published = await publishJob(drive, req.params.transcriptId, visible);
+    if (!published) return res.status(404).json({ error: 'Not found' });
+    res.json(published);
+  }));
+
+  app.get('/t/:transcriptId', requireSession, asyncHandler(async (req, res) => {
+    const drive = driveFromSession(req.sessionUser);
+    const { job } = await loadJob(drive, req.params.transcriptId);
+    if (!job) {
+      return res.status(404).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Not found</title><p>Transcript not found.</p>');
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    let rebuilt = null;
+    try {
+      rebuilt = await rebuildIfInterleaved(drive, req.params.transcriptId);
+    } catch (error) {
+      console.error('channel rebuild failed');
+    }
+    if (rebuilt) return res.send(rebuilt.html);
+    try {
+      const restored = await ensureParagraphTimes(drive, req.params.transcriptId);
+      if (restored) return res.send(restored.html);
+    } catch (error) {
+      console.error('paragraph times restore failed');
+    }
+    if (job.htmlFileId) {
+      const html = await readDriveFileText(drive, job.htmlFileId, { supportsAllDrives: true });
+      return res.send(html);
+    }
+    if (job.originalParagraphs?.length) {
+      const html = renderTranscript({
+        title: job.driveFileName || 'Transcript',
+        paragraphs: job.originalParagraphs,
+        originalParagraphs: job.originalParagraphs,
+        appOrigin: appOrigin(),
+        transcriptId: job.id,
+        fileToken: job.fileToken,
+      });
+      return res.send(html);
+    }
+    return res.status(404).send('<!DOCTYPE html><meta charset="utf-8"><title>Not ready</title><p>Transcript is not ready yet.</p>');
+  }));
+
+  app.use((req, res) => {
+    if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
+    res.status(404).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Not found</title><p>Not found.</p>');
+  });
+
+  app.use((err, req, res, next) => {
+    console.error(safeError(err));
+    if (res.headersSent) return next(err);
+    const status = Number(err.status) || 500;
+    if (req.path.startsWith('/api/')) {
+      return res.status(status).json({ error: safeError(err) });
+    }
+    return res.status(status).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Error</title><p>Something went wrong.</p>');
+  });
+
+  return app;
+}
+
+export function start() {
+  const port = Number(process.env.PORT) || 8080;
+  const app = createApp();
+  const server = app.listen(port, '0.0.0.0', () => {
+    console.log(`listening on ${port}`);
+  });
+  server.requestTimeout = 30 * 60 * 1000;
+  server.headersTimeout = 31 * 60 * 1000;
+  server.keepAliveTimeout = 620 * 1000;
+  return server;
+}
+
+function isMain() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (isMain()) {
+  start();
+}
