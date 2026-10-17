@@ -117,10 +117,6 @@ export function findPublishedSession(catalog, sessionId) {
   return normalizeCatalog(catalog).series[SERIES_ID].sessions.find((session) => session.id === sessionId) || null;
 }
 
-export function publicMediaUrl(fileId) {
-  return `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`;
-}
-
 export function paragraphIndexAt(paragraphs, time) {
   const items = paragraphs || [];
   const seconds = Number(time);
