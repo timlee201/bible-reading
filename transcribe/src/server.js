@@ -5,6 +5,13 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { cleanParagraphs, getTranscript } from './assemblyai.js';
 import {
+  SERIES_ID,
+  SERIES_TITLE,
+  findPublishedSession,
+  publicCatalog,
+  publicMediaUrl,
+} from './catalog.js';
+import {
   breadcrumbChain,
   createDrive,
   exchangeCode,
@@ -17,11 +24,13 @@ import {
   trashDriveFile,
 } from './google.js';
 import {
+  ensureParagraphTimes,
   failJob,
   jobView,
   latestOpenJob,
   listJobViews,
   loadJob,
+  publishJob,
   rebuildIfInterleaved,
   renameJobsForDriveFile,
   saveVisibleParagraphs,
@@ -254,12 +263,40 @@ function webhookAuthorized(req) {
   return timingSafeEqualString(got, expected);
 }
 
+function finiteTime(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return null;
+  return number;
+}
+
 function normalizeParagraphs(input) {
   if (!Array.isArray(input)) return null;
-  return input.map((paragraph) => ({
-    speaker: paragraph && paragraph.speaker != null ? String(paragraph.speaker) : '',
-    text: paragraph && paragraph.text != null ? String(paragraph.text) : '',
-  }));
+  return input.map((paragraph) => {
+    const record = {
+      speaker: paragraph && paragraph.speaker != null ? String(paragraph.speaker) : '',
+      text: paragraph && paragraph.text != null ? String(paragraph.text) : '',
+    };
+    const start = finiteTime(paragraph?.start);
+    const end = finiteTime(paragraph?.end);
+    if (start != null) record.start = start;
+    if (end != null) record.end = end;
+    return record;
+  });
+}
+
+function sendApp(res) {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(publicIndexPath());
+}
+
+async function ownerDrive() {
+  const refreshToken = fallbackRefreshToken();
+  if (!refreshToken) {
+    const error = new Error('Published sessions are not available yet');
+    error.status = 503;
+    throw error;
+  }
+  return createDrive({ refreshToken });
 }
 
 async function driveForWebhook(sealed) {
@@ -283,8 +320,25 @@ export function createApp() {
   app.use(express.json({ limit: '8mb' }));
 
   app.get('/', (req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    res.sendFile(publicIndexPath());
+    sendApp(res);
+  });
+
+  app.get('/series/:seriesId', (req, res) => {
+    if (req.params.seriesId !== SERIES_ID) {
+      return res.status(404).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Not found</title><p>That series was not found.</p>');
+    }
+    sendApp(res);
+  });
+
+  app.get('/sessions/:sessionId', (req, res) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.sessionId)) {
+      return res.status(404).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>Not found</title><p>That session was not found.</p>');
+    }
+    sendApp(res);
+  });
+
+  app.get('/library', requireSession, (req, res) => {
+    sendApp(res);
   });
 
   app.get('/favicon.ico', (req, res) => {
@@ -331,13 +385,40 @@ export function createApp() {
     await saveState(drive, state);
     rememberRefreshToken(auth.refreshToken);
     setSessionCookie(res, auth);
-    res.redirect('/');
+    res.redirect('/library');
   }));
 
   app.post('/auth/logout', (req, res) => {
     clearSessionCookie(res);
     res.status(204).end();
   });
+
+  app.get('/api/catalog', asyncHandler(async (req, res) => {
+    const drive = await ownerDrive();
+    const state = await loadState(drive);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(publicCatalog(state.catalog));
+  }));
+
+  app.get('/api/sessions/:sessionId', asyncHandler(async (req, res) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.sessionId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const drive = await ownerDrive();
+    const state = await loadState(drive);
+    const session = findPublishedSession(state.catalog, req.params.sessionId);
+    if (!session) return res.status(404).json({ error: 'Not found' });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      id: session.id,
+      title: session.title,
+      order: session.order,
+      series: { id: SERIES_ID, title: SERIES_TITLE },
+      mimeType: session.mimeType || '',
+      mediaUrl: publicMediaUrl(session.driveFileId),
+      paragraphs: session.paragraphs,
+    });
+  }));
 
   app.get('/api/session', requireSession, (req, res) => {
     res.json({
@@ -539,6 +620,20 @@ export function createApp() {
     res.json({ htmlFileId: saved.htmlFileId });
   }));
 
+  app.post('/api/transcripts/:transcriptId/publish', requireSession, asyncHandler(async (req, res) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.transcriptId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const visible = req.body?.paragraphs == null ? null : normalizeParagraphs(req.body.paragraphs);
+    if (req.body?.paragraphs != null && !visible) {
+      return res.status(400).json({ error: 'paragraphs must be a list of speaker and text' });
+    }
+    const drive = driveFromSession(req.sessionUser);
+    const published = await publishJob(drive, req.params.transcriptId, visible);
+    if (!published) return res.status(404).json({ error: 'Not found' });
+    res.json(published);
+  }));
+
   app.get('/t/:transcriptId', requireSession, asyncHandler(async (req, res) => {
     const drive = driveFromSession(req.sessionUser);
     const { job } = await loadJob(drive, req.params.transcriptId);
@@ -554,6 +649,12 @@ export function createApp() {
       console.error('channel rebuild failed');
     }
     if (rebuilt) return res.send(rebuilt.html);
+    try {
+      const restored = await ensureParagraphTimes(drive, req.params.transcriptId);
+      if (restored) return res.send(restored.html);
+    } catch (error) {
+      console.error('paragraph times restore failed');
+    }
     if (job.htmlFileId) {
       const html = await readDriveFileText(drive, job.htmlFileId, { supportsAllDrives: true });
       return res.send(html);

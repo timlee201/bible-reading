@@ -4,7 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>Transcribe</title>
+  <title>Teacher's Training</title>
+  <script>
+    (function () {
+      var path = location.pathname;
+      var route = 'public';
+      if (path === '/library' || path.indexOf('/library/') === 0) route = 'library';
+      else if (path.indexOf('/sessions/') === 0) route = 'session';
+      else if (path.indexOf('/series/') === 0) route = 'series';
+      document.documentElement.setAttribute('data-route', route);
+    })();
+  </script>
   <style>
     @page { size: A4; margin: 18mm 16mm; }
     * { box-sizing: border-box; }
@@ -127,16 +137,66 @@
       100% { transform: translateX(250%); }
     }
     #progress-label { margin: 0.55rem 0 0; font-size: 1.05rem; }
-    .editor-sheet {
-      max-width: 180mm;
+    html[data-route="library"] #public-view,
+    html[data-route="library"] #public-nav,
+    html:not([data-route="library"]) #signed-in,
+    html:not([data-route="library"]) #library-nav,
+    html:not([data-route="signed-out"]) #signed-out,
+    html[data-route="signed-out"] #shell,
+    html[data-route="session"] #series-list,
+    html[data-route="session"] #session-list,
+    html[data-route="series"] #series-list,
+    html[data-route="series"] #public-transcript,
+    html[data-route="public"] #session-list,
+    html[data-route="public"] #public-transcript { display: none; }
+    .player {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: #fff;
+      border: 1px solid #e4e0d8;
+      border-radius: 10px;
+      padding: 0.75rem 0.9rem 0.85rem;
+      margin: 0 0 1rem;
+    }
+    .player audio, .player video { width: 100%; max-height: 240px; }
+    .player-title { margin: 0.45rem 0 0; font-weight: 650; }
+    .player-time { margin: 0.15rem 0 0; color: #555; font-variant-numeric: tabular-nums; }
+    .reading, .editor-sheet {
+      max-width: 40rem;
       margin: 0 auto;
       background: #fff;
       color: #1a1a1a;
-      padding: 1.25rem 1.3rem 2.5rem;
+      padding: 1.4rem 1.5rem 3rem;
       border-radius: 10px;
       font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
-      font-size: 12pt;
-      line-height: 1.5;
+      font-size: 1.125rem;
+      line-height: 1.55;
+    }
+    .session-list, .series-list { list-style: none; margin: 0; padding: 0; }
+    .session-link, .series-link {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.85rem 0;
+      border-bottom: 1px solid #eeeae3;
+      color: inherit;
+      text-decoration: none;
+    }
+    .session-link:hover, .series-link:hover { background: #f6f3ec; }
+    .block.is-current { background: #f3ead2; border-radius: 6px; }
+    button.cue {
+      display: block;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      line-height: inherit;
+      text-align: left;
+      cursor: pointer;
     }
     .editor-sheet h1 { font-size: 16pt; font-weight: 600; line-height: 1.3; margin: 0 0 1em; }
     .toolbar {
@@ -252,50 +312,73 @@
 </head>
 <body>
   <main class="gate" id="signed-out">
-    <h1>Transcribe</h1>
-    <p class="lede">Pick a recording from Drive. When the transcript is ready, an HTML file is saved next to the audio.</p>
+    <h1>Teacher's Training</h1>
+    <p class="lede">Sign in to open the transcription library.</p>
     <p>
       <a class="button" id="sign-in" href="/auth/google">Sign in with Google</a>
     </p>
   </main>
-  <div id="signed-in" class="app" hidden>
+  <div id="shell" class="app">
     <aside class="sidebar no-print">
-      <h1>Transcribe</h1>
-      <p id="who"></p>
-      <nav class="sidebar-nav" aria-label="Drive">
-        <button type="button" class="sidebar-link" id="open-my-drive">My Drive</button>
-        <button type="button" class="sidebar-link" id="open-shared">Shared with me</button>
+      <h1>Teacher's Training</h1>
+      <nav id="public-nav" class="sidebar-nav" aria-label="Series">
+        <a class="sidebar-link" href="/series/teachers-training">Teacher's Training</a>
+        <a class="sidebar-link" id="library-link" href="/library">Library</a>
       </nav>
-      <h2>Transcripts</h2>
-      <ul class="transcript-list" id="transcript-list"></ul>
-      <button type="button" class="button" id="choose">Choose a recording</button>
-      <button type="button" class="ghost" id="logout">Sign out</button>
+      <div id="library-nav">
+        <p id="who"></p>
+        <nav class="sidebar-nav" aria-label="Drive">
+          <button type="button" class="sidebar-link" id="open-my-drive">My Drive</button>
+          <button type="button" class="sidebar-link" id="open-shared">Shared with me</button>
+        </nav>
+        <h2>Transcripts</h2>
+        <ul class="transcript-list" id="transcript-list"></ul>
+        <button type="button" class="button" id="choose">Choose a recording</button>
+        <button type="button" class="ghost" id="logout">Sign out</button>
+      </div>
     </aside>
     <div class="workspace">
-      <nav class="breadcrumbs no-print" id="breadcrumbs" aria-label="Folder path"></nav>
-      <div id="progress-park">
-        <div id="progress" hidden>
-          <div class="progress-track" role="progressbar" aria-label="Transcription progress" aria-valuetext="">
-            <div class="progress-bar"></div>
-          </div>
-          <p id="progress-label"></p>
-        </div>
-      </div>
-      <p id="job" class="no-print" role="status"></p>
-      <div id="library-view">
-        <ul class="listing" id="listing"></ul>
-      </div>
-      <section id="editor-view" class="editor-sheet" hidden>
-        <div class="toolbar no-print">
+      <section id="player" class="player no-print" hidden>
+        <audio id="player-audio" controls preload="metadata"></audio>
+        <video id="player-video" controls preload="metadata" playsinline hidden></video>
+        <p id="player-title" class="player-title"></p>
+        <p id="player-time" class="player-time"></p>
+        <div class="toolbar" id="editor-tools" hidden>
           <button type="button" id="clean">Clean up</button>
           <button type="button" id="revert">Revert</button>
           <button type="button" id="save">Save</button>
           <button type="button" id="print">Print</button>
+          <button type="button" id="publish">Publish</button>
           <p id="editor-status" class="status" role="status" aria-live="polite"></p>
         </div>
-        <h1 id="editor-title"></h1>
-        <article id="editor-body"></article>
       </section>
+      <div id="public-view">
+        <section id="series-list" class="reading"></section>
+        <section id="session-list" class="reading" hidden></section>
+        <section id="public-transcript" class="reading" hidden>
+          <h1 id="public-title"></h1>
+          <article id="public-body"></article>
+        </section>
+      </div>
+      <div id="signed-in">
+        <nav class="breadcrumbs no-print" id="breadcrumbs" aria-label="Folder path"></nav>
+        <div id="progress-park">
+          <div id="progress" hidden>
+            <div class="progress-track" role="progressbar" aria-label="Transcription progress" aria-valuetext="">
+              <div class="progress-bar"></div>
+            </div>
+            <p id="progress-label"></p>
+          </div>
+        </div>
+        <p id="job" class="no-print" role="status"></p>
+        <div id="library-view">
+          <ul class="listing" id="listing"></ul>
+        </div>
+        <section id="editor-view" class="editor-sheet" hidden>
+          <h1 id="editor-title"></h1>
+          <article id="editor-body"></article>
+        </section>
+      </div>
     </div>
   </div>
   <div id="context-menu" class="context-menu no-print" role="menu" hidden>
@@ -341,21 +424,22 @@
     var folderGeneration = 0;
     var editorGeneration = 0;
     var editorTranscriptId = '';
+    var editorDriveFileId = '';
     var editorOriginal = [];
     var editorHasOriginal = false;
     var editorBusy = false;
+    var activeMedia = null;
+    var readingRoot = null;
     var ACTIVE_KEY = 'transcribeActiveJob';
 
     function $(id) { return document.getElementById(id); }
 
     function showSignedOut() {
-      $('signed-out').hidden = false;
-      $('signed-in').hidden = true;
+      document.documentElement.setAttribute('data-route', 'signed-out');
     }
 
     function showSignedIn() {
-      $('signed-out').hidden = true;
-      $('signed-in').hidden = false;
+      document.documentElement.setAttribute('data-route', 'library');
       $('who').textContent = session.email;
       openFolder('root');
       loadTranscripts();
@@ -366,20 +450,24 @@
       $('job').textContent = message || '';
     }
 
-    fetch('/api/session').then(function (res) {
-      if (!res.ok) {
+    if (document.documentElement.getAttribute('data-route') === 'library') {
+      fetch('/api/session').then(function (res) {
+        if (!res.ok) {
+          showSignedOut();
+          return null;
+        }
+        return res.json();
+      }).then(function (data) {
+        if (!data) return;
+        session = data;
+        showSignedIn();
+        if (window.gapi) gapi.load('picker', function () {});
+      }).catch(function () {
         showSignedOut();
-        return null;
-      }
-      return res.json();
-    }).then(function (data) {
-      if (!data) return;
-      session = data;
-      showSignedIn();
-      if (window.gapi) gapi.load('picker', function () {});
-    }).catch(function () {
-      showSignedOut();
-    });
+      });
+    } else {
+      bootPublic();
+    }
 
     $('logout').addEventListener('click', function () {
       fetch('/auth/logout', { method: 'POST' }).finally(function () {
@@ -736,6 +824,7 @@
       editorGeneration += 1;
       $('editor-view').hidden = true;
       $('library-view').hidden = false;
+      hidePlayer();
       currentFolderId = id || 'root';
       folderGeneration += 1;
       var generation = folderGeneration;
@@ -767,10 +856,10 @@
       }
       var paragraphs = Array.prototype.map.call(doc.querySelectorAll('section.block'), function (block) {
         var textEl = block.querySelector('.text');
-        return {
+        return paragraphTimes(block, {
           speaker: block.getAttribute('data-speaker') || '',
           text: textEl ? textEl.textContent : ''
-        };
+        });
       });
       return {
         title: titleEl ? titleEl.textContent : '',
@@ -791,6 +880,8 @@
         var block = document.createElement('section');
         block.className = 'block';
         block.setAttribute('data-speaker', speaker);
+        stampTimes(block, paragraph);
+        block.addEventListener('click', function () { seekBlock(block); });
         if (speaker && speaker !== previous) {
           var label = document.createElement('p');
           label.className = 'speaker';
@@ -806,15 +897,16 @@
         body.appendChild(block);
         previous = speaker;
       });
+      attachFollow($('player-audio').hidden ? $('player-video') : $('player-audio'), body);
     }
 
     function readEditor() {
       return Array.prototype.map.call($('editor-body').querySelectorAll('.block'), function (block) {
         var area = block.querySelector('.text');
-        return {
+        return paragraphTimes(block, {
           speaker: block.getAttribute('data-speaker') || '',
           text: area ? area.value : ''
-        };
+        });
       });
     }
 
@@ -851,6 +943,9 @@
         editorOriginal = parsed.originals || [];
         editorHasOriginal = parsed.hasOriginal;
         $('editor-title').textContent = file.name || parsed.title || 'Transcript';
+        editorDriveFileId = file.id || '';
+        showPlayer(file.name || parsed.title || 'Transcript', driveMediaUrl(editorDriveFileId), file.mimeType || file.name || '');
+        $('editor-tools').hidden = false;
         renderEditorParagraphs(parsed.paragraphs);
         var crumbs = currentBreadcrumbs.filter(function (crumb) { return !crumb.file; });
         crumbs.push({ id: file.id || '', name: file.name || parsed.title || 'Transcript', file: true });
@@ -872,7 +967,7 @@
 
     function setEditorBusy(next) {
       editorBusy = next;
-      ['clean', 'revert', 'save', 'print'].forEach(function (id) {
+      ['clean', 'revert', 'save', 'print', 'publish'].forEach(function (id) {
         $(id).disabled = next;
       });
     }
@@ -939,10 +1034,37 @@
       });
     }
 
+    function publishEditor() {
+      if (editorBusy) return;
+      if (!editorTranscriptId) {
+        setEditorStatus('This transcript is not linked to a saved job.', true);
+        return;
+      }
+      setEditorBusy(true);
+      setEditorStatus('Publishing…', false);
+      fetch('/api/transcripts/' + encodeURIComponent(editorTranscriptId) + '/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paragraphs: readEditor() })
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (!res.ok) throw new Error(data.error || 'Publish failed');
+          return data;
+        });
+      }).then(function (data) {
+        setEditorStatus(data.path ? 'Published. ' + data.path : 'Published.', false);
+      }).catch(function (error) {
+        setEditorStatus(error.message || 'Publish failed', true);
+      }).finally(function () {
+        setEditorBusy(false);
+      });
+    }
+
     $('clean').addEventListener('click', cleanUp);
     $('revert').addEventListener('click', revertEditor);
     $('save').addEventListener('click', saveEditor);
     $('print').addEventListener('click', function () { window.print(); });
+    $('publish').addEventListener('click', publishEditor);
 
     function loadTranscripts() {
       return fetch('/api/jobs').then(function (res) {
@@ -1243,6 +1365,282 @@
           if (generation !== pollGeneration) return;
           poll(id);
         }, 4000);
+      });
+    }
+
+    function paragraphTimes(block, item) {
+      ['start', 'end'].forEach(function (name) {
+        var value = Number(block.getAttribute('data-' + name));
+        if (isFinite(value) && value >= 0) item[name] = value;
+      });
+      return item;
+    }
+
+    function stampTimes(block, paragraph) {
+      ['start', 'end'].forEach(function (name) {
+        var value = Number(paragraph && paragraph[name]);
+        if (isFinite(value) && value >= 0) block.setAttribute('data-' + name, String(value));
+      });
+    }
+
+    function formatClock(seconds) {
+      if (!isFinite(seconds) || seconds < 0) return '0:00';
+      var whole = Math.floor(seconds);
+      var minutes = Math.floor(whole / 60);
+      var remain = whole % 60;
+      return minutes + ':' + (remain < 10 ? '0' : '') + remain;
+    }
+
+    function paragraphIndexFromBlocks(blocks, time) {
+      var found = -1;
+      Array.prototype.forEach.call(blocks, function (block, index) {
+        var start = Number(block.getAttribute('data-start'));
+        if (!isFinite(start)) return;
+        var end = Number(block.getAttribute('data-end'));
+        var until = isFinite(end) ? end : start;
+        var inside = time + 0.001 >= start && time < until;
+        var point = until === start && time + 0.001 >= start && time < start + 0.25;
+        if (inside || point) found = index;
+      });
+      if (found === -1) {
+        Array.prototype.forEach.call(blocks, function (block, index) {
+          var start = Number(block.getAttribute('data-start'));
+          if (isFinite(start) && start <= time + 0.001) found = index;
+        });
+      }
+      return found;
+    }
+
+    function currentMedia() {
+      return $('player-video').hidden ? $('player-audio') : $('player-video');
+    }
+
+    function attachFollow(media, root) {
+      if (activeMedia && activeMedia !== media) {
+        activeMedia.removeEventListener('timeupdate', highlightNow);
+        activeMedia.removeEventListener('seeked', highlightNow);
+      }
+      readingRoot = root || readingRoot;
+      if (!media) return;
+      if (activeMedia !== media) {
+        media.addEventListener('timeupdate', highlightNow);
+        media.addEventListener('seeked', highlightNow);
+      }
+      activeMedia = media;
+    }
+
+    function highlightNow() {
+      if (!activeMedia || !readingRoot) return;
+      var time = activeMedia.currentTime || 0;
+      var blocks = readingRoot.querySelectorAll('.block');
+      var index = paragraphIndexFromBlocks(blocks, time);
+      var current = null;
+      Array.prototype.forEach.call(blocks, function (block, i) {
+        var on = i === index;
+        block.classList.toggle('is-current', on);
+        if (on) current = block;
+      });
+      if (current && !activeMedia.paused) {
+        var rect = current.getBoundingClientRect();
+        if (rect.top < 140 || rect.bottom > window.innerHeight - 24) current.scrollIntoView({ block: 'nearest' });
+      }
+      var duration = activeMedia.duration;
+      $('player-time').textContent = formatClock(time) + (isFinite(duration) ? ' / ' + formatClock(duration) : '');
+    }
+
+    function seekBlock(block) {
+      var start = Number(block.getAttribute('data-start'));
+      if (!activeMedia || !isFinite(start)) return;
+      activeMedia.currentTime = start;
+      var pending = activeMedia.play();
+      if (pending && pending.catch) pending.catch(function () {});
+    }
+
+    function driveMediaUrl(fileId) {
+      if (!fileId || !session || !session.accessToken) return '';
+      return 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId) + '?alt=media&access_token=' + encodeURIComponent(session.accessToken);
+    }
+
+    function mediaIsVideo(hint) {
+      var value = String(hint || '');
+      if (value.indexOf('video/') === 0) return true;
+      return /\.(mp4|webm|mov|mkv|avi|wmv|mpeg|mpg|m4v)$/i.test(value);
+    }
+
+    function hidePlayer() {
+      $('player').hidden = true;
+      $('editor-tools').hidden = true;
+      ['player-audio', 'player-video'].forEach(function (id) {
+        var media = $(id);
+        media.pause();
+        media.removeAttribute('src');
+      });
+      if (activeMedia) {
+        activeMedia.removeEventListener('timeupdate', highlightNow);
+        activeMedia.removeEventListener('seeked', highlightNow);
+      }
+      activeMedia = null;
+    }
+
+    function showPlayer(title, url, mime) {
+      var useVideo = mediaIsVideo(mime);
+      var media = useVideo ? $('player-video') : $('player-audio');
+      var other = useVideo ? $('player-audio') : $('player-video');
+      other.pause();
+      other.removeAttribute('src');
+      other.hidden = true;
+      media.hidden = false;
+      if (url) media.src = url;
+      $('player').hidden = false;
+      $('player-title').textContent = title || '';
+      $('player-time').textContent = '0:00';
+      attachFollow(media, readingRoot);
+    }
+
+    function renderPublicParagraphs(paragraphs) {
+      var body = $('public-body');
+      body.textContent = '';
+      var previous = null;
+      (paragraphs || []).forEach(function (paragraph) {
+        var speaker = paragraph && paragraph.speaker != null ? String(paragraph.speaker) : '';
+        var text = paragraph && paragraph.text != null ? String(paragraph.text) : '';
+        var block = document.createElement('section');
+        block.className = 'block';
+        block.setAttribute('data-speaker', speaker);
+        stampTimes(block, paragraph);
+        if (speaker && speaker !== previous) {
+          var label = document.createElement('p');
+          label.className = 'speaker';
+          label.textContent = speaker;
+          block.appendChild(label);
+        }
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'cue';
+        button.textContent = text;
+        button.addEventListener('click', function () { seekBlock(block); });
+        block.appendChild(button);
+        body.appendChild(block);
+        previous = speaker;
+      });
+      attachFollow(currentMedia(), body);
+    }
+
+    function readJson(res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) throw new Error(data.error || 'Could not load that page');
+        return data;
+      });
+    }
+
+    function showPublicMessage(message) {
+      hidePlayer();
+      $('session-list').hidden = true;
+      $('public-transcript').hidden = true;
+      var section = $('series-list');
+      section.hidden = false;
+      section.textContent = '';
+      var note = document.createElement('p');
+      note.textContent = message;
+      section.appendChild(note);
+    }
+
+    function renderSeriesList(catalog) {
+      hidePlayer();
+      $('session-list').hidden = true;
+      $('public-transcript').hidden = true;
+      var section = $('series-list');
+      section.hidden = false;
+      section.textContent = '';
+      var heading = document.createElement('h1');
+      heading.textContent = "Teacher's Training";
+      section.appendChild(heading);
+      var list = document.createElement('ul');
+      list.className = 'series-list';
+      (catalog.series || []).forEach(function (series) {
+        var item = document.createElement('li');
+        var link = document.createElement('a');
+        link.className = 'series-link';
+        link.href = '/series/' + encodeURIComponent(series.id);
+        var name = document.createElement('span');
+        name.textContent = series.title || 'Series';
+        var count = document.createElement('span');
+        count.className = 'entry-note';
+        count.textContent = (series.sessions || []).length + ' sessions';
+        link.appendChild(name);
+        link.appendChild(count);
+        item.appendChild(link);
+        list.appendChild(item);
+      });
+      section.appendChild(list);
+    }
+
+    function renderSessionList(catalog, seriesId) {
+      var series = null;
+      (catalog.series || []).forEach(function (item) {
+        if (item.id === seriesId) series = item;
+      });
+      if (!series) {
+        showPublicMessage('That series was not found.');
+        return;
+      }
+      hidePlayer();
+      $('series-list').hidden = true;
+      $('public-transcript').hidden = true;
+      var section = $('session-list');
+      section.hidden = false;
+      section.textContent = '';
+      var heading = document.createElement('h1');
+      heading.textContent = series.title || "Teacher's Training";
+      section.appendChild(heading);
+      var sessions = series.sessions || [];
+      if (!sessions.length) {
+        var empty = document.createElement('p');
+        empty.textContent = 'No sessions have been published yet.';
+        section.appendChild(empty);
+        return;
+      }
+      var list = document.createElement('ol');
+      list.className = 'session-list';
+      sessions.forEach(function (sessionItem) {
+        var item = document.createElement('li');
+        var link = document.createElement('a');
+        link.className = 'session-link';
+        link.href = '/sessions/' + encodeURIComponent(sessionItem.id);
+        link.textContent = (sessionItem.order ? sessionItem.order + '. ' : '') + (sessionItem.title || 'Session');
+        item.appendChild(link);
+        list.appendChild(item);
+      });
+      section.appendChild(list);
+    }
+
+    function loadPublicSession(id) {
+      $('series-list').hidden = true;
+      $('session-list').hidden = true;
+      fetch('/api/sessions/' + encodeURIComponent(id)).then(readJson).then(function (sessionItem) {
+        $('public-transcript').hidden = false;
+        $('public-title').textContent = sessionItem.title || 'Session';
+        $('editor-tools').hidden = true;
+        showPlayer(sessionItem.title || 'Session', sessionItem.mediaUrl || '', sessionItem.mimeType || '');
+        renderPublicParagraphs(sessionItem.paragraphs || []);
+      }).catch(function (error) {
+        showPublicMessage(error.message || 'That session was not found.');
+      });
+    }
+
+    function bootPublic() {
+      var path = location.pathname;
+      var sessionMatch = path.match(/^\/sessions\/([^/]+)$/);
+      if (sessionMatch) {
+        loadPublicSession(decodeURIComponent(sessionMatch[1]));
+        return;
+      }
+      fetch('/api/catalog').then(readJson).then(function (catalog) {
+        var seriesMatch = path.match(/^\/series\/([^/]+)$/);
+        if (seriesMatch) renderSessionList(catalog, decodeURIComponent(seriesMatch[1]));
+        else renderSeriesList(catalog);
+      }).catch(function (error) {
+        showPublicMessage(error.message || 'Could not load sessions');
       });
     }
   </script>

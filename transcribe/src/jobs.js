@@ -9,7 +9,17 @@ import {
   resolveWebhookUrl,
   uploadAudioStream,
 } from './assemblyai.js';
-import { createHtmlFile, getDriveFile, openDriveDownload, updateHtmlFile } from './google.js';
+import {
+  SERIES_ID,
+  findPublishedSession,
+  normalizeCatalog,
+  paragraphsForCatalog,
+  paragraphsHaveTimes,
+  sessionOrder,
+  sessionTitle,
+  upsertPublishedSession,
+} from './catalog.js';
+import { createHtmlFile, getDriveFile, openDriveDownload, shareFileWithAnyone, updateHtmlFile } from './google.js';
 import { htmlFileName, renderTranscript } from './render.js';
 import { createFileToken, refreshTokenFromFileToken } from './seal.js';
 import { loadState, saveState } from './state.js';
@@ -372,6 +382,76 @@ export async function renameJobsForDriveFile(drive, driveFileId, name) {
 export async function loadJob(drive, transcriptId) {
   const state = await loadState(drive);
   return { state, job: findJob(state, transcriptId).job };
+}
+
+async function storeParagraphTimes(drive, state, job) {
+  if (paragraphsHaveTimes(job.originalParagraphs)) return false;
+  const timed = await paragraphsForCompletedJob(job);
+  if (!paragraphsHaveTimes(timed)) return false;
+  const aligned = paragraphsForCatalog(job.originalParagraphs, timed);
+  job.originalParagraphs = aligned;
+  const html = renderJobHtml(job, aligned);
+  job.htmlFileId = await writeHtml(drive, job, html);
+  job.status = 'done';
+  job.error = null;
+  await saveState(drive, state);
+  return true;
+}
+
+export async function ensureParagraphTimes(drive, transcriptId) {
+  return withLock(`times:${transcriptId}`, async () => {
+    const state = await loadState(drive);
+    const job = findJob(state, transcriptId).job;
+    if (!job || job.status !== 'done') return null;
+    const wrote = await storeParagraphTimes(drive, state, job);
+    if (!wrote) return null;
+    return { html: renderJobHtml(job, job.originalParagraphs), paragraphs: job.originalParagraphs };
+  });
+}
+
+export async function publishJob(drive, transcriptId, visible) {
+  return withLock(`publish:${transcriptId}`, async () => {
+    const state = await loadState(drive);
+    const job = findJob(state, transcriptId).job;
+    if (!job) return null;
+    if (job.status !== 'done') {
+      const error = new Error('Transcript is not ready');
+      error.status = 409;
+      throw error;
+    }
+    if (!job.driveFileId) {
+      const error = new Error('This transcript has no recording to publish');
+      error.status = 409;
+      throw error;
+    }
+    await storeParagraphTimes(drive, state, job);
+    const paragraphs = paragraphsForCatalog(
+      Array.isArray(visible) && visible.length ? visible : job.originalParagraphs,
+      job.originalParagraphs,
+    );
+    const shared = await shareFileWithAnyone(drive, job.driveFileId);
+    const named = sessionOrder(job.driveFileName);
+    const existing = findPublishedSession(state.catalog, job.id);
+    state.catalog = upsertPublishedSession(state.catalog, {
+      id: job.id,
+      title: sessionTitle(job.driveFileName),
+      order: named != null ? named : existing?.order,
+      driveFileId: job.driveFileId,
+      mimeType: shared.mimeType || '',
+      paragraphs,
+    });
+    await saveState(drive, state);
+    return {
+      id: job.id,
+      title: sessionTitle(job.driveFileName),
+      path: `/sessions/${job.id}`,
+      seriesPath: `/series/${SERIES_ID}`,
+    };
+  });
+}
+
+export function publishedCatalog(state) {
+  return normalizeCatalog(state?.catalog);
 }
 
 export async function rebuildIfInterleaved(drive, transcriptId) {

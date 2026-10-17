@@ -18,7 +18,7 @@ function render(overrides = {}) {
 }
 
 function blocks(html) {
-  return [...html.matchAll(/<section class="block" data-speaker="([^"]*)">([\s\S]*?)<\/section>/g)];
+  return [...html.matchAll(/<section class="block"(?: data-start="[^"]*")?(?: data-end="[^"]*")? data-speaker="([^"]*)">([\s\S]*?)<\/section>/g)];
 }
 
 test('HTML-escapes <script>', () => {
@@ -111,6 +111,19 @@ test('HTML-escapes edited paragraph text and keeps the original paragraphs', () 
   assert.doesNotMatch(html, /<p class="text">Hello<\/p>/);
 });
 
+test('paragraph start and end are kept on the block and in the original JSON', () => {
+  const original = [
+    { speaker: 'A', text: 'Hello', start: 1.25, end: 4.5 },
+    { speaker: 'A', text: 'Still me', start: 4.5, end: 8 },
+  ];
+  const html = render({ paragraphs: original, originalParagraphs: original });
+  assert.match(html, /data-start="1.25"/);
+  assert.match(html, /data-end="4.5"/);
+  assert.match(html, /data-speaker="A"/);
+  const embedded = html.match(/id="original-paragraphs">([\s\S]*?)<\/script>/)[1];
+  assert.deepEqual(JSON.parse(embedded), original);
+});
+
 test('signed-in page includes the library sidebar and editor', () => {
   const page = fs.readFileSync(new URL('./public/index.html', import.meta.url), 'utf8');
   assert.match(page, /class="sidebar/);
@@ -125,6 +138,11 @@ test('signed-in page includes the library sidebar and editor', () => {
   assert.match(page, /class="progress-bar"/);
   assert.match(page, /label\.className = 'speaker'/);
   assert.match(page, /@page \{ size: A4; margin: 18mm 16mm; \}/);
+  assert.match(page, /id="player"/);
+  assert.match(page, /id="publish"/);
+  assert.match(page, /Teacher's Training/);
+  assert.match(page, /\/series\//);
+  assert.match(page, /\/sessions\//);
   assert.doesNotMatch(page, /innerHTML/);
 });
 

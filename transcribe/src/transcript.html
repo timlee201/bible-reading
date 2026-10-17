@@ -104,13 +104,22 @@ __BODY__
         });
       }
 
+      function timedFields(block) {
+        var item = {};
+        ['start', 'end'].forEach(function (name) {
+          var value = Number(block.getAttribute('data-' + name));
+          if (isFinite(value) && value >= 0) item[name] = value;
+        });
+        return item;
+      }
+
       function readVisible() {
         return Array.prototype.map.call(article.querySelectorAll('.block'), function (block) {
           var textEl = block.querySelector('.text');
-          return {
-            speaker: block.getAttribute('data-speaker') || '',
-            text: textEl ? textEl.textContent : ''
-          };
+          var item = timedFields(block);
+          item.speaker = block.getAttribute('data-speaker') || '';
+          item.text = textEl ? textEl.textContent : '';
+          return item;
         });
       }
 
@@ -125,6 +134,10 @@ __BODY__
           var block = document.createElement('section');
           block.className = 'block';
           block.setAttribute('data-speaker', speaker);
+          ['start', 'end'].forEach(function (name) {
+            var value = Number(paragraph && paragraph[name]);
+            if (isFinite(value) && value >= 0) block.setAttribute('data-' + name, String(value));
+          });
           if (speaker && speaker !== previous) {
             var label = document.createElement('p');
             label.className = 'speaker';

@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { normalizeCatalog } from './catalog.js';
 import { readDriveFileText } from './google.js';
 
 const FILE_NAME = 'transcript-state.json';
@@ -54,7 +55,7 @@ export async function loadState(drive) {
   });
   const files = [...(list.data.files || [])];
   if (!files.length) {
-    return { refreshToken: '', jobs: {}, fileId: null };
+    return { refreshToken: '', jobs: {}, catalog: normalizeCatalog(null), fileId: null };
   }
   files.sort((a, b) => String(b.modifiedTime || '').localeCompare(String(a.modifiedTime || '')));
   const fileId = files[0].id;
@@ -73,6 +74,7 @@ export async function loadState(drive) {
   return {
     refreshToken: typeof parsed.refreshToken === 'string' ? parsed.refreshToken : '',
     jobs,
+    catalog: normalizeCatalog(parsed.catalog),
     fileId,
   };
 }
@@ -81,6 +83,7 @@ export async function saveState(drive, state) {
   const payload = JSON.stringify({
     refreshToken: state.refreshToken || '',
     jobs: state.jobs || {},
+    catalog: normalizeCatalog(state.catalog),
   });
   if (state.fileId) {
     await drive.files.update({

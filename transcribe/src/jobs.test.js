@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isSparseTranscript, looksInterleaved, paragraphsFromUtterances, transcriptBody } from './assemblyai.js';
+import { isSparseTranscript, looksInterleaved, paragraphsFromUtterances, transcriptBody, withOriginalTimes } from './assemblyai.js';
+import { paragraphIndexAt, publicCatalog, sessionOrder, upsertPublishedSession } from './catalog.js';
 import { findJob, jobView, latestOpenJob, listJobViews } from './jobs.js';
 import { normalizeStoredJob } from './state.js';
 import {
@@ -194,8 +195,8 @@ test('duplicate stereo channels collapse to one speaker', () => {
     { channel: 2, speaker: '2B', start: 4010, text: 'We spend two sessions' },
   ]);
   assert.deepEqual(paragraphs, [
-    { speaker: 'A', text: 'And if they are really a help' },
-    { speaker: 'B', text: 'We spend two sessions' },
+    { speaker: 'A', text: 'And if they are really a help', start: 0, end: 0 },
+    { speaker: 'B', text: 'We spend two sessions', start: 4, end: 4 },
   ]);
 });
 
@@ -207,7 +208,7 @@ test('channels collapse when the words match but the breaks do not', () => {
     { channel: 2, speaker: '2A', start: 400, end: 700, text: 'really a help' },
   ]);
   assert.deepEqual(paragraphs, [
-    { speaker: 'A', text: 'And if they are really a help' },
+    { speaker: 'A', text: 'And if they are really a help', start: 0, end: 0.7 },
   ]);
 });
 
@@ -218,8 +219,8 @@ test('a pause starts a new paragraph for the same speaker', () => {
     { channel: 1, speaker: '1A', start: 4000, end: 4600, text: 'He forgave people' },
   ]);
   assert.deepEqual(paragraphs, [
-    { speaker: 'A', text: 'Three things in the first three hours' },
-    { speaker: 'A', text: 'He forgave people' },
+    { speaker: 'A', text: 'Three things in the first three hours', start: 0, end: 0.9 },
+    { speaker: 'A', text: 'He forgave people', start: 4, end: 4.6 },
   ]);
 });
 
@@ -244,7 +245,7 @@ test('channels still collapse when one side hears an extra word', () => {
     word(2, '2A', 'the', 610),
   ]);
   assert.deepEqual(paragraphs, [
-    { speaker: 'A', text: 'Please turn to the' },
+    { speaker: 'A', text: 'Please turn to the', start: 0, end: 0.78 },
   ]);
 });
 
@@ -269,9 +270,40 @@ test('distinct channels stay in time order', () => {
     { channel: 1, speaker: '1A', start: 0, text: 'Good morning everyone and welcome' },
   ]);
   assert.deepEqual(paragraphs, [
-    { speaker: '1A', text: 'Good morning everyone and welcome' },
-    { speaker: '2A', text: 'The budget needs another look today' },
+    { speaker: '1A', text: 'Good morning everyone and welcome', start: 0, end: 0 },
+    { speaker: '2A', text: 'The budget needs another look today', start: 1.5, end: 1.5 },
   ]);
+});
+
+test('clean up copies times from the original paragraph', () => {
+  assert.deepEqual(withOriginalTimes(
+    [{ speaker: 'A', text: 'Um hello', start: 12.5, end: 18 }],
+    [{ speaker: 'A', text: 'Hello' }],
+  ), [{ speaker: 'A', text: 'Hello', start: 12.5, end: 18 }]);
+});
+
+test('a session number becomes the series order', () => {
+  assert.equal(sessionOrder('2015. TT. Session 2.mp3'), 2);
+  assert.equal(sessionOrder('Interview.mp3'), null);
+  const catalog = upsertPublishedSession(null, {
+    id: 'job-2',
+    title: '2015. TT. Session 2.mp3',
+    order: 2,
+    driveFileId: 'file-2',
+    mimeType: 'audio/mpeg',
+    paragraphs: [{ speaker: 'A', text: 'Please turn', start: 0, end: 3.2 }],
+  });
+  const again = upsertPublishedSession(catalog, {
+    id: 'job-9',
+    title: 'Notes.mp3',
+    driveFileId: 'file-9',
+    paragraphs: [{ speaker: 'A', text: 'Later' }],
+  });
+  const view = publicCatalog(again);
+  assert.deepEqual(view.series[0].sessions.map((session) => session.order), [2, 3]);
+  assert.equal(view.series[0].title, "Teacher's Training");
+  assert.equal(paragraphIndexAt(catalog.series['teachers-training'].sessions[0].paragraphs, 1.2), 0);
+  assert.equal(paragraphIndexAt(catalog.series['teachers-training'].sessions[0].paragraphs, 4), 0);
 });
 
 test('a channel retry asks AssemblyAI to transcribe each channel', () => {

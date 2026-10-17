@@ -208,11 +208,30 @@ export function paragraphsFromUtterances(utterances) {
       paragraphs.push({
         speaker,
         text,
+        start: utterance.start || 0,
         end: utterance.end || utterance.start || 0,
       });
     }
   }
-  return paragraphs.map((paragraph) => ({ speaker: paragraph.speaker, text: paragraph.text }));
+  return paragraphs.map((paragraph) => secondsParagraph(paragraph));
+}
+
+function secondsFromMs(value) {
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return Math.round(ms) / 1000;
+}
+
+function secondsParagraph(paragraph) {
+  const record = {
+    speaker: paragraph.speaker == null ? '' : String(paragraph.speaker),
+    text: paragraph.text == null ? '' : String(paragraph.text),
+  };
+  const start = secondsFromMs(paragraph.start);
+  const end = secondsFromMs(paragraph.end);
+  if (start != null) record.start = start;
+  if (end != null) record.end = end;
+  return record;
 }
 
 export async function createTranscript(audioUrl, webhookUrl, options = {}) {
@@ -245,10 +264,7 @@ export async function getParagraphs(transcriptId) {
   });
   if (!res.ok) throw await readError(res);
   const data = await res.json();
-  return (data.paragraphs || []).map((paragraph) => ({
-    speaker: paragraph.speaker == null ? '' : String(paragraph.speaker),
-    text: paragraph.text == null ? '' : String(paragraph.text),
-  }));
+  return (data.paragraphs || []).map((paragraph) => secondsParagraph(paragraph));
 }
 
 function cleanupModel() {
@@ -320,8 +336,27 @@ function sameShape(input, output) {
   return true;
 }
 
+export function withOriginalTimes(source, cleaned) {
+  return (cleaned || []).map((item, index) => {
+    const record = {
+      speaker: speakerOf(item?.speaker),
+      text: item?.text == null ? '' : String(item.text),
+    };
+    const original = source?.[index] || {};
+    const start = Number(original.start);
+    const end = Number(original.end);
+    if (Number.isFinite(start) && start >= 0) record.start = start;
+    if (Number.isFinite(end) && end >= 0) record.end = end;
+    return record;
+  });
+}
+
 async function cleanChunk(chunk) {
   let lastError = new Error('Cleanup failed');
+  const modelChunk = (chunk || []).map((item) => ({
+    speaker: speakerOf(item?.speaker),
+    text: item?.text == null ? '' : String(item.text),
+  }));
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const res = await fetch(GATEWAY, {
@@ -331,7 +366,7 @@ async function cleanChunk(chunk) {
           model: cleanupModel(),
           temperature: 0,
           max_tokens: 16000,
-          messages: [{ role: 'user', content: cleanupPrompt(chunk) }],
+          messages: [{ role: 'user', content: cleanupPrompt(modelChunk) }],
         }),
         signal: AbortSignal.timeout(120 * 1000),
       });
@@ -339,13 +374,10 @@ async function cleanChunk(chunk) {
       const payload = await res.json();
       const parsed = parseCleanup(completionText(payload));
       const paragraphs = parsed?.paragraphs;
-      if (!sameShape(chunk, paragraphs)) {
+      if (!sameShape(modelChunk, paragraphs)) {
         throw new Error('Cleanup changed speakers or paragraph count');
       }
-      return paragraphs.map((item) => ({
-        speaker: speakerOf(item.speaker),
-        text: item.text,
-      }));
+      return withOriginalTimes(chunk, paragraphs);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error('Cleanup failed');
     }

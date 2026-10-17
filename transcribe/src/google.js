@@ -127,6 +127,32 @@ export async function renameDriveFile(drive, fileId, name) {
   return res.data;
 }
 
+function alreadyShared(error) {
+  const code = Number(error?.code || error?.response?.status);
+  if (code === 409) return true;
+  const reasons = error?.errors || error?.response?.data?.error?.errors || [];
+  return reasons.some((item) => /already exists|duplicate/i.test(String(item?.reason || item?.message || '')))
+    || /already exists|duplicate/i.test(String(error?.message || ''));
+}
+
+export async function shareFileWithAnyone(drive, fileId) {
+  try {
+    await drive.permissions.create({
+      fileId,
+      supportsAllDrives: true,
+      requestBody: { type: 'anyone', role: 'reader' },
+    });
+  } catch (error) {
+    if (!alreadyShared(error)) throw error;
+  }
+  const res = await drive.files.get({
+    fileId,
+    fields: 'id,mimeType,webContentLink',
+    supportsAllDrives: true,
+  });
+  return res.data;
+}
+
 export async function trashDriveFile(drive, fileId) {
   await drive.files.update({
     fileId,

@@ -45,6 +45,12 @@ export function speakerOf(value) {
   return String(value);
 }
 
+function timeAttribute(paragraph, key) {
+  const value = Number(paragraph?.[key]);
+  if (!Number.isFinite(value) || value < 0) return '';
+  return ` data-${key}="${escapeHtml(String(value))}"`;
+}
+
 export function renderParagraphs(paragraphs) {
   const blocks = [];
   let previous = null;
@@ -54,7 +60,7 @@ export function renderParagraphs(paragraphs) {
     const showSpeaker = speaker !== '' && speaker !== previous;
     const label = showSpeaker ? `<p class="speaker">${escapeHtml(speaker)}</p>` : '';
     blocks.push(
-      `<section class="block" data-speaker="${escapeHtml(speaker)}">${label}<p class="text">${escapeHtml(text)}</p></section>`,
+      `<section class="block"${timeAttribute(paragraph, 'start')}${timeAttribute(paragraph, 'end')} data-speaker="${escapeHtml(speaker)}">${label}<p class="text">${escapeHtml(text)}</p></section>`,
     );
     previous = speaker;
   }
